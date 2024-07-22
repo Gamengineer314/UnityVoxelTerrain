@@ -1,0 +1,79 @@
+#pragma kernel PickMeshes
+
+#define mask3Bits 7 // 0b111
+
+static const float3 normals[] = {
+	float3(1,0,0),  // x+
+	float3(0,0,1),  // z+
+	float3(0,1,0),  // y+
+	float3(-1,0,0), // x-
+	float3(0,0,-1), // z-
+	float3(0,-1,0), // y-
+};
+
+
+// Inputs
+
+struct TerrainMeshData {
+	float3 center;
+	float3 size;
+	uint data1; // normal (3b), squaresCount (29b)
+	uint data2; // startSquare (32b)
+};
+
+uniform float4 cameraFarPlane; // x,y,z: normal, w: distance
+uniform float4 cameraLeftPlane;
+uniform float4 cameraRightPlane;
+uniform float4 cameraDownPlane;
+uniform float4 cameraUpPlane;
+uniform float4 cameraPosition; // x,y,z: position
+StructuredBuffer<TerrainMeshData> meshData; // All meshes information (position, size, squares indices)
+
+
+// Outputs
+
+RWStructuredBuffer<uint> commands; // Indirect arguments (1: instanceCount)
+RWByteAddressBuffer squaresIndices; // Indices of the squares to render
+
+
+bool OutsidePlane(float3 center, float3 size, float4 plane)
+{
+	float3 normalSign = sign(plane.xyz);
+	float3 closestPoint = center + size * normalSign;
+	return dot(closestPoint, plane.xyz) + plane.w < 0;
+}
+
+
+bool CameraCulling(float3 center, float3 size, float3 normal) // true if must render mesh
+{
+	// Ignore meshes that are invisible because of their normal
+	if (dot(center - normal * size - cameraPosition.xyz, normal) > 0) return false;
+
+	// Ignore meshes outside of camera view
+	if (OutsidePlane(center, size, cameraFarPlane)) return false;
+	if (OutsidePlane(center, size, cameraLeftPlane)) return false;
+	if (OutsidePlane(center, size, cameraRightPlane)) return false;
+	if (OutsidePlane(center, size, cameraUpPlane)) return false;
+	if (OutsidePlane(center, size, cameraDownPlane)) return false;
+
+	return true;
+}
+
+
+[numthreads(64,1,1)]
+void PickMeshes(uint3 id : SV_DispatchThreadID) // id.x : id of the mesh
+{
+	TerrainMeshData mesh = meshData[id.x];
+	uint normal = mesh.data1 & mask3Bits;
+	uint squaresCount = mesh.data1 >> 3;
+	uint startSquare = mesh.data2;
+	float3 normalVector = normals[normal];
+
+	if (CameraCulling(mesh.center, mesh.size, normalVector)) {
+		uint startIndex;
+		InterlockedAdd(commands[1], squaresCount, startIndex);
+		for (uint i = 0; i < squaresCount; i++) {
+			squaresIndices.Store((startIndex + i) * 4, startSquare + i);
+		}
+	}
+}
