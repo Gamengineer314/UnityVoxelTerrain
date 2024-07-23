@@ -23,7 +23,7 @@ public class WorldManager : MonoBehaviour
         // Generate terrain
         Stopwatch watch = Stopwatch.StartNew();
         (NativeList<int> IDs, NativeArray<int> IDIndexes) = terrainGenerator.GenerateTerrain();
-        Debug.Log($"Terrain generated in {watch.ElapsedMilliseconds}s");
+        Debug.Log($"Terrain generated in {watch.ElapsedMilliseconds} ms");
 
         // Generate mesh
         watch.Restart();
@@ -40,7 +40,7 @@ public class WorldManager : MonoBehaviour
         JobHandle.CompleteAll(handles);
         IDs.Dispose();
         IDIndexes.Dispose();
-        Debug.Log($"Mesh generated in {watch.ElapsedMilliseconds}s");
+        Debug.Log($"Mesh generated in {watch.ElapsedMilliseconds} ms");
 
         // Start rendering
         foreach (GenerateMesh job in jobs)
@@ -50,7 +50,7 @@ public class WorldManager : MonoBehaviour
             job.squares.Dispose();
         }
         terrainRenderer.StartRender();
-        Debug.Log($"Rendering started in {watch.ElapsedMilliseconds}s");
+        Debug.Log($"Rendering started in {watch.ElapsedMilliseconds} ms");
     }
 
 
