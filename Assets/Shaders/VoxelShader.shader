@@ -36,8 +36,6 @@ Shader "Unlit/VoxelShader"
                 float3(1,-1,-1), float3(1,-1,1), float3(-1,-1,1), float3(-1,-1,-1),  // y-
             };
 
-            uniform float quadsInterleaving; // Size increase to remove small (1 pixel) gaps between triangles
-
             static const float3 normals[] = {
                 float3(1,0,0),  // x+
                 float3(0,0,1),  // z+
@@ -58,6 +56,8 @@ Shader "Unlit/VoxelShader"
 
             ByteAddressBuffer squares; // x (13b), sizeX (6b), z (13b), sizeZ (6b), y (9b), sizeY (6b), normal (3b), colorID (8b)
             ByteAddressBuffer squaresIndices;
+
+            uniform float quadsInterleaving; // Size increase to remove small (1 pixel) gaps between triangles
 
 
             // Random value between 0 and 1
@@ -85,13 +85,14 @@ Shader "Unlit/VoxelShader"
                 // Position
                 float3 vertex = cubeVertices[normal * 4 + vertexID];
                 float3 worldPos = cubePos + (vertex * 0.5 + 0.5) * (size + 1);
-                worldPos += vertex * quadsInterleaving * distance(_WorldSpaceCameraPos, worldPos) * quadsInterleaving / 1000; // Slight size increase
+                float3 normalVector = normals[normal];
+                worldPos += vertex * (1 - abs(normalVector)) * quadsInterleaving * distance(_WorldSpaceCameraPos, worldPos) * quadsInterleaving / 1000; // Slight size increase
                 
                 // Create output
                 v2f o;
                 o.vertex = mul(UNITY_MATRIX_VP, float4(worldPos, 1));
                 o.color = colors[squareData2 >> 24];
-                o.blockData = float4(worldPos - normals[normal], faceLightLevels[normal]);
+                o.blockData = float4(worldPos - normalVector * 0.5, faceLightLevels[normal]);
                 return o;
             }
 
