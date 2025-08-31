@@ -52,13 +52,13 @@ public class TerrainRenderer : MonoBehaviour {
         material.SetFloat("seed", Random.value);
         material.SetFloat("quadsInterleaving", quadsInterleaving);
 
-        commandsBuffer = new GraphicsBuffer(GraphicsBuffer.Target.IndirectArguments, 3, GraphicsBuffer.IndirectDrawIndexedArgs.size);
+        commandsBuffer = new GraphicsBuffer(GraphicsBuffer.Target.IndirectArguments, 2, GraphicsBuffer.IndirectDrawIndexedArgs.size);
         terrainCulling.SetBuffer(0, "commands", commandsBuffer);
         indicesBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Index, quadIndices.Length, sizeof(ushort));
         indicesBuffer.SetData(quadIndices);
         quadIndices = null;
 
-        renderParams = new(material) {
+        renderParams = new RenderParams(material) {
             worldBounds = new Bounds(new Vector3(WorldManager.horizontalSize, WorldManager.verticalSize, WorldManager.horizontalSize) / 2, new Vector3(WorldManager.horizontalSize, WorldManager.verticalSize, WorldManager.horizontalSize)),
             camera = mainCamera,
             matProps = new MaterialPropertyBlock()
@@ -170,7 +170,7 @@ public class TerrainRenderer : MonoBehaviour {
         terrainCulling.SetVector(cameraUpPlaneUniform, new Vector4(cameraPlanes[3].normal.x, cameraPlanes[3].normal.y, cameraPlanes[3].normal.z, cameraPlanes[3].distance));
 
         // Frustrum culling in compute shader then draw
-        commandsBuffer.SetData(commands, 0, 0, 2);
+        commandsBuffer.SetData(commands);
         terrainCulling.Dispatch(0, threadGroups, 1, 1);
         Graphics.RenderPrimitivesIndexedIndirect(renderParams, MeshTopology.Triangles, indicesBuffer, commandsBuffer, startCommand:0, commandCount:1);
 #if UNITY_EDITOR
