@@ -175,9 +175,9 @@ public struct GenerateMesh : IJob
                     int y = IDs[i] - startY;
                     if (y >= 0 && y < WorldManager.chunkSize)
                     {
-                        rows[z + y * WorldManager.chunkSize] |= 1UL << x; // x
-                        rows[x + y * WorldManager.chunkSize + WorldManager.chunkSize * WorldManager.chunkSize] |= 1UL << z; // z
-                        rows[x + z * WorldManager.chunkSize + 2 * WorldManager.chunkSize * WorldManager.chunkSize] |= 1UL << y; // y
+                        rows[y + z * WorldManager.chunkSize] |= 1UL << x; // x
+                        rows[x + z * WorldManager.chunkSize + WorldManager.chunkSize * WorldManager.chunkSize] |= 1UL << y; // z
+                        rows[y + x * WorldManager.chunkSize + 2 * WorldManager.chunkSize * WorldManager.chunkSize] |= 1UL << z; // y
                     }
                     else if (y == -1) ySide.x = true;
                     else if (y == WorldManager.chunkSize) ySide.y = true;
@@ -192,25 +192,25 @@ public struct GenerateMesh : IJob
         {
             int otherStartXZIndex = (chunkX - 1 + chunkZ * xChunks) * WorldManager.chunkSize * WorldManager.chunkSize;
             for (int z = 0; z < WorldManager.chunkSize; z++)
-                GenerateXZSides(otherStartXZIndex + WorldManager.chunkSize - 1 + z * WorldManager.chunkSize, false, z);
+                GenerateXZSides(otherStartXZIndex + WorldManager.chunkSize - 1 + z * WorldManager.chunkSize, false, z * WorldManager.chunkSize);
         }
         if (chunkX < maxChunkX)
         {
             int otherStartXZIndex = (chunkX + 1 + chunkZ * xChunks) * WorldManager.chunkSize * WorldManager.chunkSize;
             for (int z = 0; z < WorldManager.chunkSize; z++)
-                GenerateXZSides(otherStartXZIndex + z * WorldManager.chunkSize, true, z);
+                GenerateXZSides(otherStartXZIndex + z * WorldManager.chunkSize, true, z * WorldManager.chunkSize);
         }
         if (chunkZ > 0)
         {
             int otherStartXZIndex = (chunkX + (chunkZ - 1) * xChunks) * WorldManager.chunkSize * WorldManager.chunkSize;
             for (int x = 0; x < WorldManager.chunkSize; x++)
-                GenerateXZSides(otherStartXZIndex + x + (WorldManager.chunkSize - 1) * WorldManager.chunkSize, false, x + WorldManager.chunkSize * WorldManager.chunkSize);
+                GenerateXZSides(otherStartXZIndex + x + (WorldManager.chunkSize - 1) * WorldManager.chunkSize, false, x * WorldManager.chunkSize + WorldManager.chunkSize * WorldManager.chunkSize);
         }
         if (chunkZ < maxChunkZ)
         {
             int otherStartXZIndex = (chunkX + (chunkZ + 1) * xChunks) * WorldManager.chunkSize * WorldManager.chunkSize;
             for (int x = 0; x < WorldManager.chunkSize; x++)
-                GenerateXZSides(otherStartXZIndex + x, true, x + WorldManager.chunkSize * WorldManager.chunkSize);
+                GenerateXZSides(otherStartXZIndex + x, true, x * WorldManager.chunkSize + WorldManager.chunkSize * WorldManager.chunkSize);
         }
     }
 
@@ -223,7 +223,7 @@ public struct GenerateMesh : IJob
         {
             if (y == IDs[i] - startY)
             {
-                sides[startIndex + y * WorldManager.chunkSize] = new bool2(after ? sides[startIndex + y * WorldManager.chunkSize].x : true, after ? true : sides[startIndex + y * WorldManager.chunkSize].y);
+                sides[startIndex + y] = new bool2(!after || sides[startIndex + y * WorldManager.chunkSize].x, after || sides[startIndex + y * WorldManager.chunkSize].y);
                 i += 2;
                 if (i >= IDIndexes[xzIndex + 1]) return;
             }
@@ -235,19 +235,19 @@ public struct GenerateMesh : IJob
     // planes contains chunkSize (rows in one plane) * chunkSize (planes in one direction) * nbrIDs * 6 (x+, z+, y+, x-, z-, y-)
     private void GenerateBinaryPlanes()
     {
-        GenerateAxisBinaryPlanes(0, new int3(0, 0, 1), new int3(0, 1, 0), new int3(1, 0, 0));
-        GenerateAxisBinaryPlanes(1, new int3(1, 0, 0), new int3(0, 1, 0), new int3(0, 0, 1));
-        GenerateAxisBinaryPlanes(2, new int3(1, 0, 0), new int3(0, 0, 1), new int3(0, 1, 0));
+        GenerateAxisBinaryPlanes(0);
+        GenerateAxisBinaryPlanes(1);
+        GenerateAxisBinaryPlanes(2);
     }
 
 
     // Generate binary planes for one axis
-    private void GenerateAxisBinaryPlanes(int axis, int3 xIncrement, int3 yIncrement, int3 depthIncrement)
+    private void GenerateAxisBinaryPlanes(int axis)
     {
-        int3 pos = new int3(0, startY, 0);
+        int3 beforeX = new(0, startY, 0);
         for (int y = 0; y < WorldManager.chunkSize; y++) // Iter plane rows
         {
-            int3 beforeX = pos;
+            int3 pos = beforeX;
             for (int x = 0; x < WorldManager.chunkSize; x++) // Iter plane columns
             {
                 ulong row = rows[x + y * WorldManager.chunkSize + axis * WorldManager.chunkSize * WorldManager.chunkSize];
@@ -261,10 +261,12 @@ public struct GenerateMesh : IJob
                 {
                     int depth = math.tzcnt(faceRow);
                     faceRow &= ~(1UL << depth);
-                    int id = GetID(pos + depth * depthIncrement);
+                    int3 posDepth = pos;
+                    posDepth[axis] += depth;
+                    int id = GetID(posDepth);
                     if (id != 0)
                     {
-                        planes[y + depth * WorldManager.chunkSize + idToIndex[id] * WorldManager.chunkSize * WorldManager.chunkSize + axis * WorldManager.chunkSize * WorldManager.chunkSize * indexToId.length]
+                        planes[y + depth * WorldManager.chunkSize + idToIndex[id] * WorldManager.chunkSize * WorldManager.chunkSize + 2 * axis * WorldManager.chunkSize * WorldManager.chunkSize * indexToId.length]
                             |= 1UL << x;
                     }
                 }
@@ -277,17 +279,19 @@ public struct GenerateMesh : IJob
                 {
                     int depth = math.tzcnt(faceRow);
                     faceRow &= ~(1UL << depth);
-                    int id = GetID(pos + depth * depthIncrement);
+                    int3 posDepth = pos;
+                    posDepth[axis] += depth;
+                    int id = GetID(posDepth);
                     if (id != 0)
                     {
-                        planes[y + depth * WorldManager.chunkSize + idToIndex[id] * WorldManager.chunkSize * WorldManager.chunkSize + (axis + 3) * WorldManager.chunkSize * WorldManager.chunkSize * indexToId.length]
+                        planes[y + depth * WorldManager.chunkSize + idToIndex[id] * WorldManager.chunkSize * WorldManager.chunkSize + (2 * axis + 1) * WorldManager.chunkSize * WorldManager.chunkSize * indexToId.length]
                             |= 1UL << x;
                     }
                 }
 
-                pos += xIncrement;
+                pos[CubeNormals.WidthAxis(axis)]++;
             }
-            pos = beforeX + yIncrement;
+            beforeX[CubeNormals.HeightAxis(axis)]++;
         }
     }
 

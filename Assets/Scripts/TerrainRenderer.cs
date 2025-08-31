@@ -7,8 +7,7 @@ using Random = UnityEngine.Random;
 // Terrain renderer using indirect instanced rendering.
 // Some optimizations inspired by https://youtu.be/40JzyaOYJeY?si=fmJFqzTBIclsLnIv
 [BurstCompile]
-public class TerrainRenderer : MonoBehaviour
-{
+public class TerrainRenderer : MonoBehaviour {
     private const int threadGroupSize = 64;
     private const float quadsInterleaving = 0.05f; // Remove small (1 pixel) gaps between triangles
 
@@ -22,12 +21,11 @@ public class TerrainRenderer : MonoBehaviour
     private NativeList<TerrainMeshData> meshData;
     private GraphicsBuffer squaresIndicesBuffer = null; // Indices of the rectangles to render
     private GraphicsBuffer indicesBuffer; // Indices of a rectangles (each rectangles is an instance)
-    private ushort[] quadIndices = new ushort[] { 0, 1, 2, 0, 2, 3 };
+    private ushort[] quadIndices = new ushort[] { 0, 1, 2, 2, 1, 3 };
     private GraphicsBuffer commandsBuffer; // 0: player, (1: all)
-    private GraphicsBuffer.IndirectDrawIndexedArgs[] commands = new GraphicsBuffer.IndirectDrawIndexedArgs[]
-    {
-        new GraphicsBuffer.IndirectDrawIndexedArgs { indexCountPerInstance = 6 },
-        new GraphicsBuffer.IndirectDrawIndexedArgs { indexCountPerInstance = 6 }
+    private readonly GraphicsBuffer.IndirectDrawIndexedArgs[] commands = new GraphicsBuffer.IndirectDrawIndexedArgs[] {
+        new() { indexCountPerInstance = 6 },
+        new() { indexCountPerInstance = 6 }
     };
     private RenderParams renderParams;
     private int threadGroups;
@@ -40,16 +38,15 @@ public class TerrainRenderer : MonoBehaviour
     private GraphicsBuffer allSquaresIndicesBuffer = null;
 #endif
 
-    private int cameraPositionUniform = Shader.PropertyToID("cameraPosition");
-    private int cameraFarPlaneUniform = Shader.PropertyToID("cameraFarPlane");
-    private int cameraLeftPlaneUniform = Shader.PropertyToID("cameraLeftPlane");
-    private int cameraRightPlaneUniform = Shader.PropertyToID("cameraRightPlane");
-    private int cameraDownPlaneUniform = Shader.PropertyToID("cameraDownPlane");
-    private int cameraUpPlaneUniform = Shader.PropertyToID("cameraUpPlane");
+    private readonly int cameraPositionUniform = Shader.PropertyToID("cameraPosition");
+    private readonly int cameraFarPlaneUniform = Shader.PropertyToID("cameraFarPlane");
+    private readonly int cameraLeftPlaneUniform = Shader.PropertyToID("cameraLeftPlane");
+    private readonly int cameraRightPlaneUniform = Shader.PropertyToID("cameraRightPlane");
+    private readonly int cameraDownPlaneUniform = Shader.PropertyToID("cameraDownPlane");
+    private readonly int cameraUpPlaneUniform = Shader.PropertyToID("cameraUpPlane");
 
 
-    private unsafe void Start()
-    {
+    private unsafe void Start() {
         squares = new NativeList<Square>(Allocator.Persistent);
         meshData = new NativeList<TerrainMeshData>(Allocator.Persistent);
         material.SetFloat("seed", Random.value);
@@ -61,32 +58,33 @@ public class TerrainRenderer : MonoBehaviour
         indicesBuffer.SetData(quadIndices);
         quadIndices = null;
 
-        renderParams = new RenderParams(material);
-        renderParams.worldBounds = new Bounds(new Vector3(WorldManager.horizontalSize, WorldManager.verticalSize, WorldManager.horizontalSize) / 2, new Vector3(WorldManager.horizontalSize, WorldManager.verticalSize, WorldManager.horizontalSize));
-        renderParams.camera = mainCamera;
-        renderParams.matProps = new MaterialPropertyBlock();
+        renderParams = new(material) {
+            worldBounds = new Bounds(new Vector3(WorldManager.horizontalSize, WorldManager.verticalSize, WorldManager.horizontalSize) / 2, new Vector3(WorldManager.horizontalSize, WorldManager.verticalSize, WorldManager.horizontalSize)),
+            camera = mainCamera,
+            matProps = new MaterialPropertyBlock()
+        };
 
 #if UNITY_EDITOR
-        allRenderParams = new RenderParams(material);
-        allRenderParams.worldBounds = new Bounds(new Vector3(WorldManager.horizontalSize, WorldManager.verticalSize, WorldManager.horizontalSize) / 2, new Vector3(WorldManager.horizontalSize, WorldManager.verticalSize, WorldManager.horizontalSize));
-        allRenderParams.layer = LayerMask.NameToLayer("SceneOnly");
-        allRenderParams.matProps = new MaterialPropertyBlock();
+        allRenderParams = new RenderParams(material) {
+            worldBounds = new Bounds(new Vector3(WorldManager.horizontalSize, WorldManager.verticalSize, WorldManager.horizontalSize) / 2, new Vector3(WorldManager.horizontalSize, WorldManager.verticalSize, WorldManager.horizontalSize)),
+            layer = LayerMask.NameToLayer("SceneOnly"),
+            matProps = new MaterialPropertyBlock()
+        };
         OnValidate();
 #endif
     }
 
 
-    public void Dispose()
-    {
+    public void Dispose() {
         commandsBuffer.Dispose();
         indicesBuffer.Dispose();
-        if (squaresBuffer != null) squaresBuffer.Dispose();
-        if (meshDataBuffer != null) meshDataBuffer.Dispose();
-        if (squaresIndicesBuffer != null) squaresIndicesBuffer.Dispose();
+        squaresBuffer?.Dispose();
+        meshDataBuffer?.Dispose();
+        squaresIndicesBuffer?.Dispose();
         if (squares.IsCreated) squares.Dispose();
         if (meshData.IsCreated) meshData.Dispose();
 #if UNITY_EDITOR
-        if (allSquaresIndicesBuffer != null) allSquaresIndicesBuffer.Dispose();
+        allSquaresIndicesBuffer?.Dispose();
 #endif
     }
 
@@ -96,8 +94,7 @@ public class TerrainRenderer : MonoBehaviour
     /// </summary>
     /// <param name="meshes">Meshes to add</param>
     /// <param name="squares">Squares in meshes</param>
-    public void AddMeshes(NativeList<VoxelMesh> meshes, NativeList<Square> squares)
-    {
+    public void AddMeshes(NativeList<VoxelMesh> meshes, NativeList<Square> squares) {
         uint startSquare = (uint)this.squares.Length;
         foreach (VoxelMesh mesh in meshes)
         {
@@ -112,8 +109,7 @@ public class TerrainRenderer : MonoBehaviour
     /// Prepare render.
     /// Future LateUpdate will draw terrain.
     /// </summary>
-    public unsafe void StartRender()
-    {
+    public unsafe void StartRender() {
         // Add empty meshes at the end to have a size multiple of 64 (number of threads per thread group in compute shader)
         while (meshData.Length % threadGroupSize != 0) meshData.Add(default);
         threadGroups = meshData.Length / threadGroupSize;
@@ -129,7 +125,7 @@ public class TerrainRenderer : MonoBehaviour
         meshDataBuffer.SetData(meshData.AsArray());
         terrainCulling.SetBuffer(0, "meshData", meshDataBuffer);
 #if UNITY_EDITOR
-        NativeArray<uint> allSquaresIndices = new NativeArray<uint>(squares.Length, Allocator.Temp);
+        NativeArray<uint> allSquaresIndices = new(squares.Length, Allocator.Temp);
         for (int i = 0; i < squares.Length; i++) allSquaresIndices[i] = (uint)i;
         allSquaresIndicesBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Raw, squares.Length, sizeof(uint));
         allSquaresIndicesBuffer.SetData(allSquaresIndices);
@@ -144,11 +140,9 @@ public class TerrainRenderer : MonoBehaviour
 
 
 #if UNITY_EDITOR
-    private void OnValidate()
-    {
+    private void OnValidate() {
         // Change scene view
-        if (sceneRender == SceneRender.Player)
-        {
+        if (sceneRender == SceneRender.Player) {
             renderParams.camera = null;
             renderParams.layer = LayerMask.NameToLayer("PlayerAndScene");
         }
@@ -158,17 +152,14 @@ public class TerrainRenderer : MonoBehaviour
 
 
     // LateUpdate to render after camera moved
-    private void LateUpdate()
-    {
-        if (rendering)
-        {
+    private void LateUpdate() {
+        if (rendering) {
             DrawMeshes();
         }
     }
 
 
-    private unsafe void DrawMeshes()
-    {
+    private unsafe void DrawMeshes() {
         // Set camera data
         terrainCulling.SetVector(cameraPositionUniform, mainCamera.transform.position);
         Plane[] cameraPlanes = GeometryUtility.CalculateFrustumPlanes(mainCamera);
