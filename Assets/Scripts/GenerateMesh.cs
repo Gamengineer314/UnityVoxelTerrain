@@ -161,8 +161,7 @@ public struct GenerateMesh : IJob
     // rows: bit rows containing 1 if the block is solid, 0 otherwise
     // sides: 2 bools, first is true if the block before the row is solid, 0 otherwise, second is true if the block after the row is solid, 0 otherwise
     // rows and sides contain chunkSize * chunkSize elements for each axis (x, z, y)
-    private void GenerateBinarySolidBlocks()
-    {
+    private void GenerateBinarySolidBlocks() {
         // Rows and y sides
         int xzIndex = startXZIndex;
         for (int z = 0; z < WorldManager.chunkSize; z++) // Iter chunk z
@@ -173,8 +172,7 @@ public struct GenerateMesh : IJob
                 for (int i = IDIndexes[xzIndex]; i < IDIndexes[xzIndex + 1]; i += 2) // Iter world y (only solid blocks in chunk)
                 {
                     int y = IDs[i] - startY;
-                    if (y >= 0 && y < WorldManager.chunkSize)
-                    {
+                    if (y >= 0 && y < WorldManager.chunkSize) {
                         rows[y + z * WorldManager.chunkSize] |= 1UL << x; // x
                         rows[x + z * WorldManager.chunkSize + WorldManager.chunkSize * WorldManager.chunkSize] |= 1UL << y; // z
                         rows[y + x * WorldManager.chunkSize + 2 * WorldManager.chunkSize * WorldManager.chunkSize] |= 1UL << z; // y
@@ -182,35 +180,47 @@ public struct GenerateMesh : IJob
                     else if (y == -1) ySide.x = true;
                     else if (y == WorldManager.chunkSize) ySide.y = true;
                 }
-                sides[x + z * WorldManager.chunkSize + 2 * WorldManager.chunkSize * WorldManager.chunkSize] = ySide;
+                sides[x + z * WorldManager.chunkSize + WorldManager.chunkSize * WorldManager.chunkSize] = ySide;
                 xzIndex++;
             }
         }
 
         // x and z sides
-        if (chunkX > 0)
-        {
+        if (chunkX > 0) {
             int otherStartXZIndex = (chunkX - 1 + chunkZ * xChunks) * WorldManager.chunkSize * WorldManager.chunkSize;
             for (int z = 0; z < WorldManager.chunkSize; z++)
                 GenerateXZSides(otherStartXZIndex + WorldManager.chunkSize - 1 + z * WorldManager.chunkSize, false, z * WorldManager.chunkSize);
         }
-        if (chunkX < maxChunkX)
-        {
+        else {
+            for (int z = 0; z < WorldManager.chunkSize; z++)
+                GenerateXZSides(false, z * WorldManager.chunkSize);
+        }
+        if (chunkX < maxChunkX) {
             int otherStartXZIndex = (chunkX + 1 + chunkZ * xChunks) * WorldManager.chunkSize * WorldManager.chunkSize;
             for (int z = 0; z < WorldManager.chunkSize; z++)
                 GenerateXZSides(otherStartXZIndex + z * WorldManager.chunkSize, true, z * WorldManager.chunkSize);
         }
-        if (chunkZ > 0)
-        {
+        else {
+            for (int z = 0; z < WorldManager.chunkSize; z++)
+                GenerateXZSides(true, z * WorldManager.chunkSize);
+        }
+        if (chunkZ > 0) {
             int otherStartXZIndex = (chunkX + (chunkZ - 1) * xChunks) * WorldManager.chunkSize * WorldManager.chunkSize;
             for (int x = 0; x < WorldManager.chunkSize; x++)
-                GenerateXZSides(otherStartXZIndex + x + (WorldManager.chunkSize - 1) * WorldManager.chunkSize, false, x * WorldManager.chunkSize + WorldManager.chunkSize * WorldManager.chunkSize);
+                GenerateXZSides(otherStartXZIndex + x + (WorldManager.chunkSize - 1) * WorldManager.chunkSize, false, x * WorldManager.chunkSize + 2 * WorldManager.chunkSize * WorldManager.chunkSize);
         }
-        if (chunkZ < maxChunkZ)
-        {
+        else {
+            for (int x = 0; x < WorldManager.chunkSize; x++)
+                GenerateXZSides(false, x * WorldManager.chunkSize + 2 * WorldManager.chunkSize * WorldManager.chunkSize);
+        }
+        if (chunkZ < maxChunkZ) {
             int otherStartXZIndex = (chunkX + (chunkZ + 1) * xChunks) * WorldManager.chunkSize * WorldManager.chunkSize;
             for (int x = 0; x < WorldManager.chunkSize; x++)
-                GenerateXZSides(otherStartXZIndex + x, true, x * WorldManager.chunkSize + WorldManager.chunkSize * WorldManager.chunkSize);
+                GenerateXZSides(otherStartXZIndex + x, true, x * WorldManager.chunkSize + 2 * WorldManager.chunkSize * WorldManager.chunkSize);
+        }
+        else {
+            for (int x = 0; x < WorldManager.chunkSize; x++)
+                GenerateXZSides(true, x * WorldManager.chunkSize + 2 * WorldManager.chunkSize * WorldManager.chunkSize);
         }
     }
 
@@ -223,18 +233,24 @@ public struct GenerateMesh : IJob
         {
             if (y == IDs[i] - startY)
             {
-                sides[startIndex + y] = new bool2(!after || sides[startIndex + y * WorldManager.chunkSize].x, after || sides[startIndex + y * WorldManager.chunkSize].y);
+                sides[startIndex + y] = new bool2(!after || sides[startIndex + y].x, after || sides[startIndex + y].y);
                 i += 2;
                 if (i >= IDIndexes[xzIndex + 1]) return;
             }
+        }
+    }
+    
+    // Generate filled side row at (x, z)
+    private void GenerateXZSides(bool after, int startIndex) {
+        for (int y = 0; y < WorldManager.chunkSize; y++) {
+            sides[startIndex + y] = new bool2(!after || sides[startIndex + y].x, after || sides[startIndex + y].y);
         }
     }
 
 
     // planes: 64 bits rows containing 1 if the face must be rendered, 0 otherwise
     // planes contains chunkSize (rows in one plane) * chunkSize (planes in one direction) * nbrIDs * 6 (x+, z+, y+, x-, z-, y-)
-    private void GenerateBinaryPlanes()
-    {
+    private void GenerateBinaryPlanes() {
         GenerateAxisBinaryPlanes(0);
         GenerateAxisBinaryPlanes(1);
         GenerateAxisBinaryPlanes(2);
