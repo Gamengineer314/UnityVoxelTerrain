@@ -63,5 +63,6 @@ public class TerrainGenerator : MonoBehaviour {
                 }
             }
         }
+        IDIndexes[WorldManager.horizontalSize * WorldManager.horizontalSize] = IDs.Length;
     }
 }

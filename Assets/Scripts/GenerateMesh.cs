@@ -7,7 +7,7 @@ using Unity.Burst;
 
 // Fast, multithreadable greedy mesher.
 // Optimizations inspired by https://youtu.be/qnGoGq7DWMc?si=8qQ08B40-qbJCfp0
-[BurstCompile]
+//[BurstCompile]
 public struct GenerateMesh : IJob
 {
     [ReadOnly] private int chunkStartX;
@@ -80,10 +80,10 @@ public struct GenerateMesh : IJob
     public unsafe void Execute()
     {
         // Find IDs in area and y range for each (x, z) chunk
-        NativeArray<bool> containedIDs = new NativeArray<bool>(256, Allocator.Temp);
+        NativeArray<bool> containedIDs = new(256, Allocator.Temp);
         int idCount = 0;
-        NativeArray<int> minY = new NativeArray<int>((chunkEndX - chunkStartX + 1) * (chunkEndZ - chunkStartZ + 1), Allocator.Temp, NativeArrayOptions.UninitializedMemory);
-        NativeArray<int> maxY = new NativeArray<int>((chunkEndX - chunkStartX + 1) * (chunkEndZ - chunkStartZ + 1), Allocator.Temp, NativeArrayOptions.UninitializedMemory);
+        NativeArray<int> minY = new((chunkEndX - chunkStartX + 1) * (chunkEndZ - chunkStartZ + 1), Allocator.Temp, NativeArrayOptions.UninitializedMemory);
+        NativeArray<int> maxY = new((chunkEndX - chunkStartX + 1) * (chunkEndZ - chunkStartZ + 1), Allocator.Temp, NativeArrayOptions.UninitializedMemory);
         for (int chunkZ = chunkStartZ; chunkZ <= chunkEndZ; chunkZ++)
         {
             for (int chunkX = chunkStartX; chunkX <= chunkEndX; chunkX++)
