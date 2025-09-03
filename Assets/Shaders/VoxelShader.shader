@@ -33,8 +33,12 @@ Shader "Unlit/VoxelShader" {
                 12, // z-
             };
 
-            ByteAddressBuffer squares; // x: x (13b), z (13b) ; y: y (9b), width (6b), height (6b), normal (3b), color (8b)
-            ByteAddressBuffer squaresIndices;
+            struct Square {
+                uint data1; // x (13b), z (13b)
+                uint data2; // y (9b), width (6b), height (6b), normal (3b), color (8b)
+            };
+
+            StructuredBuffer<Square> squares;
 
             uniform float quadsInterleaving; // Size increase to remove small (1 pixel) gaps between triangles
 
@@ -48,11 +52,12 @@ Shader "Unlit/VoxelShader" {
             }
 
 
-            v2f vert(uint vertexID: SV_VertexID, uint instanceID : SV_InstanceID) {
+            v2f vert(uint vertexID: SV_VertexID) {
                 // Get square
-                uint squareIndex = squaresIndices.Load(instanceID * 4) * 8;
-                uint squareData1 = squares.Load(squareIndex);
-                uint squareData2 = squares.Load(squareIndex + 4);
+                uint squareID = vertexID >> 2;
+                uint squareData1 = squares[squareID].data1;
+                uint squareData2 = squares[squareID].data2;
+                vertexID &= mask2Bits;
 
                 // Unpack data
                 float3 cubePos = float3(squareData1 & mask13Bits, squareData2 & mask9Bits, squareData1 >> 13);

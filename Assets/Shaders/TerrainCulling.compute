@@ -2,23 +2,19 @@
 
 #define mask3Bits 7 // 0b111
 
-static const float3 normals[] = {
-	float3(1,0,0),  // x+
-	float3(-1,0,0), // x-
-	float3(0,1,0),  // y+
-	float3(0,-1,0), // y-
-	float3(0,0,1),  // z+
-	float3(0,0,-1), // z-
-};
-
-
-// Inputs
-
 struct TerrainMeshData {
 	float3 center;
 	uint data1; // normal (3b), squaresCount (29b)
 	float3 size;
 	uint data2; // startSquare (32b)
+};
+
+struct IndirectDrawArgs {
+	uint vertexCount;
+    uint instanceCount;
+    uint firstVertex;
+    int baseVertex;
+    uint baseInstance;
 };
 
 uniform float4 cameraFarPlane; // x,y,z: normal, w: distance
@@ -28,12 +24,7 @@ uniform float4 cameraDownPlane;
 uniform float4 cameraUpPlane;
 uniform float4 cameraPosition; // x,y,z: position
 StructuredBuffer<TerrainMeshData> meshData; // All meshes information (position, size, squares indices)
-
-
-// Outputs
-
-RWStructuredBuffer<uint> commands; // Indirect arguments (1: instanceCount)
-RWByteAddressBuffer squaresIndices; // Indices of the squares to render
+RWStructuredBuffer<IndirectDrawArgs> commands; // Indirect arguments
 
 
 bool OutsidePlane(float3 center, float3 size, float4 plane) {
@@ -61,16 +52,16 @@ bool CameraCulling(float3 center, float3 size, float3 normal) { // true if must 
 [numthreads(64,1,1)]
 void PickMeshes(uint3 id : SV_DispatchThreadID) { // id.x : id of the mesh
 	TerrainMeshData mesh = meshData[id.x];
-	uint normal = mesh.data1 & mask3Bits;
+	uint normalID = mesh.data1 & mask3Bits;
 	uint squaresCount = mesh.data1 >> 3;
 	uint startSquare = mesh.data2;
-	float3 normalVector = normals[normal];
+	float normal[3] = { 0, 0, 0 };
+    normal[normalID >> 1] = -2 * float(normalID & 1u) + 1;
+	float3 normalVector = float3(normal[0], normal[1], normal[2]);
 
 	if (CameraCulling(mesh.center, mesh.size, normalVector)) {
-		uint startIndex;
-		InterlockedAdd(commands[1], squaresCount, startIndex);
-		for (uint i = 0; i < squaresCount; i++) {
-			squaresIndices.Store((startIndex + i) * 4, startSquare + i);
-		}
+		uint index = commands.IncrementCounter();
+		commands[index].vertexCount = squaresCount * 6;
+		commands[index].baseVertex = startSquare * 4;
 	}
 }

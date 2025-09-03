@@ -100,10 +100,18 @@ public readonly struct Square {
     public readonly uint data1; // x (13b), z (13b)
     public readonly uint data2; // y (9b), width (6b), height (6b), normal (3b), color (8b)
 
-    public Square(uint x, uint y, uint z, uint w, uint h, uint normal, uint colorID) {
+    public Square(uint x, uint y, uint z, uint w, uint h, uint normal, uint color) {
         data1 = x | (z << 13);
-        data2 = y | ((w - 1) << 9) | ((h - 1) << 15) | (normal << 21) | (colorID << 24);
+        data2 = y | ((w - 1) << 9) | ((h - 1) << 15) | (normal << 21) | (color << 24);
     }
+
+    public uint X => data1 & 0b1111111111111;
+    public uint Y => data2 & 0b111111111;
+    public uint Z => (data1 >> 13) & 0b1111111111111;
+    public uint Width => ((data2 >> 9) & 0b111111) + 1;
+    public uint Height => ((data2 >> 15) & 0b111111) + 1;
+    public uint Normal => (data2 >> 21) & 0b111;
+    public uint Color => (data2 >> 24) & 0b11111111;
 }
 
 
@@ -121,4 +129,8 @@ public readonly struct TerrainMeshData {
     }
 
     public TerrainMeshData(VoxelMesh mesh, uint startSquare) : this(mesh.Center, mesh.Size, (uint)mesh.normal, mesh.squaresCount, startSquare) { }
+
+    public uint SquareCount => data1 >> 3;
+    public uint StartSquare => data2;
+    public uint Normal => data1 & 0b111;
 }

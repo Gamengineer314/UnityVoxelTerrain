@@ -2,6 +2,7 @@ using UnityEngine;
 using Unity.Burst;
 using Unity.Collections;
 using Random = UnityEngine.Random;
+using UnityEngine.Rendering;
 
 
 // Terrain renderer using indirect instanced rendering.
@@ -19,14 +20,9 @@ public class TerrainRenderer : MonoBehaviour {
     private NativeList<Square> squares;
     private GraphicsBuffer meshDataBuffer = null; // All meshes information (position, size, rectangles indices)
     private NativeList<TerrainMeshData> meshData;
-    private GraphicsBuffer squaresIndicesBuffer = null; // Indices of the rectangles to render
+    private GraphicsBuffer commandsBuffer;
+    private GraphicsBuffer counterBuffer = null; // Number of commands
     private GraphicsBuffer indicesBuffer; // Indices of a rectangles (each rectangles is an instance)
-    private ushort[] quadIndices = new ushort[] { 0, 1, 2, 2, 1, 3 };
-    private GraphicsBuffer commandsBuffer; // 0: player, (1: all)
-    private readonly GraphicsBuffer.IndirectDrawIndexedArgs[] commands = new GraphicsBuffer.IndirectDrawIndexedArgs[] {
-        new() { indexCountPerInstance = 6 },
-        new() { indexCountPerInstance = 6 }
-    };
     private RenderParams renderParams;
     private int threadGroups;
     private bool rendering = false;
@@ -35,7 +31,8 @@ public class TerrainRenderer : MonoBehaviour {
     public enum SceneRender { Player, All, Nothing }
     public SceneRender sceneRender;
     private RenderParams allRenderParams;
-    private GraphicsBuffer allSquaresIndicesBuffer = null;
+    private GraphicsBuffer allCommandsBuffer = null;
+    private int allNCommands;
 #endif
 
     private readonly int cameraPositionUniform = Shader.PropertyToID("cameraPosition");
@@ -49,14 +46,24 @@ public class TerrainRenderer : MonoBehaviour {
     private unsafe void Start() {
         squares = new NativeList<Square>(Allocator.Persistent);
         meshData = new NativeList<TerrainMeshData>(Allocator.Persistent);
+
         material.SetFloat("seed", Random.value);
         material.SetFloat("quadsInterleaving", quadsInterleaving);
 
-        commandsBuffer = new GraphicsBuffer(GraphicsBuffer.Target.IndirectArguments, 2, GraphicsBuffer.IndirectDrawIndexedArgs.size);
-        terrainCulling.SetBuffer(0, "commands", commandsBuffer);
-        indicesBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Index, quadIndices.Length, sizeof(ushort));
-        indicesBuffer.SetData(quadIndices);
-        quadIndices = null;
+        counterBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 1, sizeof(uint));
+
+        // All 16 bits indices
+        ushort[] indices = new ushort[98304];
+        for (int i = 0; i < 16384; i++) {
+            indices[6 * i] = (ushort)(4 * i);
+            indices[6 * i + 1] = (ushort)(4 * i + 1);
+            indices[6 * i + 2] = (ushort)(4 * i + 2);
+            indices[6 * i + 3] = (ushort)(4 * i + 2);
+            indices[6 * i + 4] = (ushort)(4 * i + 1);
+            indices[6 * i + 5] = (ushort)(4 * i + 3);
+        }
+        indicesBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Index, indices.Length, sizeof(ushort));
+        indicesBuffer.SetData(indices);
 
         renderParams = new RenderParams(material) {
             worldBounds = new Bounds(new Vector3(WorldManager.horizontalSize, WorldManager.verticalSize, WorldManager.horizontalSize) / 2, new Vector3(WorldManager.horizontalSize, WorldManager.verticalSize, WorldManager.horizontalSize)),
@@ -76,15 +83,15 @@ public class TerrainRenderer : MonoBehaviour {
 
 
     public void Dispose() {
-        commandsBuffer.Dispose();
-        indicesBuffer.Dispose();
         squaresBuffer?.Dispose();
         meshDataBuffer?.Dispose();
-        squaresIndicesBuffer?.Dispose();
+        commandsBuffer.Dispose();
+        counterBuffer.Dispose();
+        indicesBuffer.Dispose();
         if (squares.IsCreated) squares.Dispose();
         if (meshData.IsCreated) meshData.Dispose();
 #if UNITY_EDITOR
-        allSquaresIndicesBuffer?.Dispose();
+        allCommandsBuffer?.Dispose();
 #endif
     }
 
@@ -96,8 +103,7 @@ public class TerrainRenderer : MonoBehaviour {
     /// <param name="squares">Squares in meshes</param>
     public void AddMeshes(NativeList<VoxelMesh> meshes, NativeList<Square> squares) {
         uint startSquare = (uint)this.squares.Length;
-        foreach (VoxelMesh mesh in meshes)
-        {
+        foreach (VoxelMesh mesh in meshes) {
             meshData.Add(new TerrainMeshData(mesh, startSquare));
             startSquare += mesh.squaresCount;
         }
@@ -115,24 +121,26 @@ public class TerrainRenderer : MonoBehaviour {
         threadGroups = meshData.Length / threadGroupSize;
 
         // Create buffers
-        squaresBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Raw, squares.Length, sizeof(Square));
+        squaresBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, squares.Length, sizeof(Square));
         squaresBuffer.SetData(squares.AsArray());
         material.SetBuffer("squares", squaresBuffer);
-        squaresIndicesBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Raw, squares.Length, sizeof(uint));
-        renderParams.matProps.SetBuffer("squaresIndices", squaresIndicesBuffer);
-        terrainCulling.SetBuffer(0, "squaresIndices", squaresIndicesBuffer);
         meshDataBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, meshData.Length, sizeof(TerrainMeshData));
         meshDataBuffer.SetData(meshData.AsArray());
         terrainCulling.SetBuffer(0, "meshData", meshDataBuffer);
+        commandsBuffer = new GraphicsBuffer(GraphicsBuffer.Target.IndirectArguments | GraphicsBuffer.Target.Counter, meshData.Length, GraphicsBuffer.IndirectDrawIndexedArgs.size);
+        GraphicsBuffer.IndirectDrawIndexedArgs[] commands = new GraphicsBuffer.IndirectDrawIndexedArgs[meshData.Length];
+        for (int i = 0; i < meshData.Length; i++) commands[i] = new() { instanceCount = 1 };
+        commandsBuffer.SetData(commands);
 #if UNITY_EDITOR
-        NativeArray<uint> allSquaresIndices = new(squares.Length, Allocator.Temp);
-        for (int i = 0; i < squares.Length; i++) allSquaresIndices[i] = (uint)i;
-        allSquaresIndicesBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Raw, squares.Length, sizeof(uint));
-        allSquaresIndicesBuffer.SetData(allSquaresIndices);
-        allRenderParams.matProps.SetBuffer("squaresIndices", allSquaresIndicesBuffer);
-        commands[1] = new GraphicsBuffer.IndirectDrawIndexedArgs { indexCountPerInstance = 6, instanceCount = (uint)squares.Length };
-        allSquaresIndices.Dispose();
+        allCommandsBuffer = new GraphicsBuffer(GraphicsBuffer.Target.IndirectArguments, meshData.Length, GraphicsBuffer.IndirectDrawIndexedArgs.size);
+        for (int i = 0; i < meshData.Length; i++) {
+            commands[i].indexCountPerInstance = 6 * meshData[i].SquareCount;
+            commands[i].baseVertexIndex = 4 * meshData[i].StartSquare;
+        }
+        allCommandsBuffer.SetData(commands);
+        allNCommands = meshData.Length;
 #endif
+        terrainCulling.SetBuffer(0, "commands", commandsBuffer);
         squares.Dispose();
         meshData.Dispose();
         rendering = true;
@@ -169,12 +177,17 @@ public class TerrainRenderer : MonoBehaviour {
         terrainCulling.SetVector(cameraDownPlaneUniform, new Vector4(cameraPlanes[2].normal.x, cameraPlanes[2].normal.y, cameraPlanes[2].normal.z, cameraPlanes[2].distance));
         terrainCulling.SetVector(cameraUpPlaneUniform, new Vector4(cameraPlanes[3].normal.x, cameraPlanes[3].normal.y, cameraPlanes[3].normal.z, cameraPlanes[3].distance));
 
-        // Frustrum culling in compute shader then draw
-        commandsBuffer.SetData(commands);
+        // Frustrum culling
+        commandsBuffer.SetCounterValue(0);
         terrainCulling.Dispatch(0, threadGroups, 1, 1);
-        Graphics.RenderPrimitivesIndexedIndirect(renderParams, MeshTopology.Triangles, indicesBuffer, commandsBuffer, startCommand:0, commandCount:1);
+        GraphicsBuffer.CopyCount(commandsBuffer, counterBuffer, 0);
+        uint[] data = new uint[1];
+        counterBuffer.GetData(data);
+
+        // Draw calls
+        Graphics.RenderPrimitivesIndexedIndirect(renderParams, MeshTopology.Triangles, indicesBuffer, commandsBuffer, commandCount: (int)data[0]);
 #if UNITY_EDITOR
-        if (sceneRender == SceneRender.All) Graphics.RenderPrimitivesIndexedIndirect(allRenderParams, MeshTopology.Triangles, indicesBuffer, commandsBuffer, startCommand:1, commandCount:1);
+        if (sceneRender == SceneRender.All) Graphics.RenderPrimitivesIndexedIndirect(allRenderParams, MeshTopology.Triangles, indicesBuffer, allCommandsBuffer, commandCount: allNCommands);
 #endif
     }
 }
