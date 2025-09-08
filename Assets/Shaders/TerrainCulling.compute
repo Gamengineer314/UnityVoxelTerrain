@@ -1,16 +1,16 @@
-#pragma kernel PickMeshes
+#pragma kernel pickMeshes
 
 #define mask3Bits 7 // 0b111
 
-struct TerrainMeshData {
-	float3 center;
-	uint data1; // normal (3b), squaresCount (29b)
-	float3 size;
-	uint data2; // startSquare (32b)
+struct VoxelMesh {
+    float3 center;
+    uint data1; // normal (3b), squaresCount (29b)
+    float3 size;
+    uint data2; // startSquare (32b)
 };
 
 struct IndirectDrawArgs {
-	uint vertexCount;
+    uint vertexCount;
     uint instanceCount;
     uint firstVertex;
     int baseVertex;
@@ -23,45 +23,46 @@ uniform float4 cameraRightPlane;
 uniform float4 cameraDownPlane;
 uniform float4 cameraUpPlane;
 uniform float4 cameraPosition; // x,y,z: position
-StructuredBuffer<TerrainMeshData> meshData; // All meshes information (position, size, squares indices)
+StructuredBuffer<VoxelMesh> meshes; // All meshes information (position, size, squares indices)
 RWStructuredBuffer<IndirectDrawArgs> commands; // Indirect arguments
 
 
-bool OutsidePlane(float3 center, float3 size, float4 plane) {
-	float3 normalSign = sign(plane.xyz);
-	float3 closestPoint = center + size * normalSign;
-	return dot(closestPoint, plane.xyz) + plane.w < 0;
+bool outsidePlane(float3 center, float3 size, float4 plane) {
+    float3 normalSign = sign(plane.xyz);
+    float3 closestPoint = center + size * normalSign;
+    return dot(closestPoint, plane.xyz) + plane.w < 0;
 }
 
 
-bool CameraCulling(float3 center, float3 size, float3 normal) { // true if must render mesh
-	// Ignore meshes that are invisible because of their normal
-	if (dot(center - normal * size - cameraPosition.xyz, normal) > 0) return false;
+bool boundsCulling(float3 center, float3 size) { // Ignore meshes outside of camera view
+    if (outsidePlane(center, size, cameraFarPlane)) return false;
+    if (outsidePlane(center, size, cameraLeftPlane)) return false;
+    if (outsidePlane(center, size, cameraRightPlane)) return false;
+    if (outsidePlane(center, size, cameraUpPlane)) return false;
+    if (outsidePlane(center, size, cameraDownPlane)) return false;
+    return true;
+}
 
-	// Ignore meshes outside of camera view
-	if (OutsidePlane(center, size, cameraFarPlane)) return false;
-	if (OutsidePlane(center, size, cameraLeftPlane)) return false;
-	if (OutsidePlane(center, size, cameraRightPlane)) return false;
-	if (OutsidePlane(center, size, cameraUpPlane)) return false;
-	if (OutsidePlane(center, size, cameraDownPlane)) return false;
 
-	return true;
+bool normalCulling(float3 center, float3 size, uint normalID) { // Ignore meshes that are invisible because of their normal
+    if (normalID == 6) return true; // Multiple normals in same mesh
+    float normalArr[3] = { 0, 0, 0 };
+    normalArr[normalID >> 1] = -2 * float(normalID & 1u) + 1;
+    float3 normal = float3(normalArr[0], normalArr[1], normalArr[2]);
+    return dot(center - normal * size - cameraPosition.xyz, normal) <= 0;
 }
 
 
 [numthreads(64,1,1)]
-void PickMeshes(uint3 id : SV_DispatchThreadID) { // id.x : id of the mesh
-	TerrainMeshData mesh = meshData[id.x];
-	uint normalID = mesh.data1 & mask3Bits;
-	uint squaresCount = mesh.data1 >> 3;
-	uint startSquare = mesh.data2;
-	float normal[3] = { 0, 0, 0 };
-    normal[normalID >> 1] = -2 * float(normalID & 1u) + 1;
-	float3 normalVector = float3(normal[0], normal[1], normal[2]);
-
-	if (CameraCulling(mesh.center, mesh.size, normalVector)) {
-		uint index = commands.IncrementCounter();
-		commands[index].vertexCount = squaresCount * 6;
-		commands[index].baseVertex = startSquare * 4;
-	}
+void pickMeshes(uint3 id : SV_DispatchThreadID) { // id.x : id of the mesh
+    VoxelMesh mesh = meshes[id.x];
+    uint normalID = mesh.data1 & mask3Bits;
+    uint squaresCount = mesh.data1 >> 3;
+    uint startSquare = mesh.data2;
+    
+    if (squaresCount > 0 && normalCulling(mesh.center, mesh.size, normalID) && boundsCulling(mesh.center, mesh.size)) {
+        uint index = commands.IncrementCounter();
+        commands[index].vertexCount = squaresCount * 6;
+        commands[index].baseVertex = startSquare * 4;
+    }
 }

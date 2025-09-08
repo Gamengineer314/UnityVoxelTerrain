@@ -13,7 +13,7 @@ Shader "Unlit/VoxelShader" {
 
             struct v2f {
                 float4 vertex : SV_POSITION;
-                float4 blockData : TEXCOORD0; // x,y,z : block pos, w : light level
+                float4 voxelData : TEXCOORD0; // x,y,z : voxel pos, w : light level
                 nointerpolation fixed4 color : COLOR; // x,y,z: color, w: random variation ammount
             };
 
@@ -33,37 +33,37 @@ Shader "Unlit/VoxelShader" {
                 12, // z-
             };
 
-            struct Square {
+            struct Face {
                 uint data1; // x (13b), z (13b)
                 uint data2; // y (9b), width (6b), height (6b), normal (3b), color (8b)
             };
 
-            StructuredBuffer<Square> squares;
+            StructuredBuffer<Face> faces;
 
-            uniform float quadsInterleaving; // Size increase to remove small (1 pixel) gaps between triangles
+            uniform float quadsInterleaving; // Remove 1 pixel gaps between triangles
 
 
             // Random value between 0 and 1
             uniform float seed;
-            float random(uint3 block) {
-                float3 vec = frac(float3(block) * 0.1031 + seed);
+            float random(uint3 pos) {
+                float3 vec = frac(float3(pos) * 0.1031 + seed);
                 vec += dot(vec, vec.yzx + 33.33);
                 return frac((vec.x + vec.y) * vec.z);
             }
 
 
             v2f vert(uint vertexID: SV_VertexID) {
-                // Get square
-                uint squareID = vertexID >> 2;
-                uint squareData1 = squares[squareID].data1;
-                uint squareData2 = squares[squareID].data2;
+                // Get face
+                uint faceID = vertexID >> 2;
+                uint faceData1 = faces[faceID].data1;
+                uint faceData2 = faces[faceID].data2;
                 vertexID &= mask2Bits;
 
                 // Unpack data
-                float3 cubePos = float3(squareData1 & mask13Bits, squareData2 & mask9Bits, squareData1 >> 13);
-                uint normalID = (squareData2 >> 21) & mask3Bits;
-                float width = ((squareData2 >> 9) & mask6Bits) + 1;
-                float height = ((squareData2 >> 15) & mask6Bits) + 1;
+                float3 cubePos = float3(faceData1 & mask13Bits, faceData2 & mask9Bits, faceData1 >> 13);
+                uint normalID = (faceData2 >> 21) & mask3Bits;
+                float width = ((faceData2 >> 9) & mask6Bits) + 1;
+                float height = ((faceData2 >> 15) & mask6Bits) + 1;
                 uint normalAxis = normalID >> 1;
 
                 // Position
@@ -77,18 +77,18 @@ Shader "Unlit/VoxelShader" {
                 // Output
                 v2f o;
                 o.vertex = mul(UNITY_MATRIX_VP, float4(pos[0], pos[1], pos[2], 1));
-                o.blockData = float4(pos[0] - normal[0] * 0.5f, pos[1] - normal[1] * 0.5f, pos[2] - normal[2] * 0.5f, faceLightLevels[normalID]);
-                o.color = colors[squareData2 >> 24];
+                o.voxelData = float4(pos[0] - normal[0] * 0.5f, pos[1] - normal[1] * 0.5f, pos[2] - normal[2] * 0.5f, faceLightLevels[normalID]);
+                o.color = colors[faceData2 >> 24];
                 return o;
             }
 
 
             fixed4 frag(v2f i) : SV_Target {
-                uint3 blockPos = (uint3)i.blockData.xyz;
-                float lightLevel = i.blockData.w;
+                uint3 pos = (uint3)i.voxelData.xyz;
+                float lightLevel = i.voxelData.w;
                 fixed4 color = i.color;
                 color *= lightLevel / 15; // Light (depending on face directions, better lighting could be added)
-                color *= 1 + color.w * ((round(random(blockPos) * discretization) / discretization) - 0.5); // Random slight color variation
+                color *= 1 + color.w * ((round(random(pos) * discretization) / discretization) - 0.5); // Random slight color variation
                 color.w = 1;
                 return color;
             }

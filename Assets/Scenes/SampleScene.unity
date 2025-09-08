@@ -202,6 +202,7 @@ GameObject:
   - component: {fileID: 963194227}
   - component: {fileID: 963194226}
   - component: {fileID: 963194229}
+  - component: {fileID: 963194230}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -290,11 +291,25 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 963194225}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 4d99d1cd86abe144e9bd513162071293, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+--- !u!114 &963194230
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 963194225}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0d7d9c10f0be8e14e842c714fc01e8b7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  terrain: {fileID: 1587352371}
+  target: {fileID: 963194227}
 --- !u!1 &1146958223
 GameObject:
   m_ObjectHideFlags: 0
@@ -399,7 +414,8 @@ GameObject:
   - component: {fileID: 1587352369}
   - component: {fileID: 1587352368}
   - component: {fileID: 1587352367}
-  - component: {fileID: 1587352366}
+  - component: {fileID: 1587352371}
+  - component: {fileID: 1587352370}
   m_Layer: 0
   m_Name: WorldManager
   m_TagString: Untagged
@@ -407,22 +423,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &1587352366
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1587352365}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 3a6f64641b207b94d88256c24b5daca4, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  material: {fileID: 2100000, guid: cac78caaf365edc428d13d3b1e88c092, type: 2}
-  mainCamera: {fileID: 963194227}
-  terrainCulling: {fileID: 7200000, guid: b39989d6a89e331409f427fbe1843c39, type: 3}
-  sceneRender: 2
 --- !u!114 &1587352367
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -448,7 +448,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   terrainGenerator: {fileID: 1587352367}
-  terrainRenderer: {fileID: 1587352366}
+  terrainRenderer: {fileID: 963194230}
+  terrain: {fileID: 1587352371}
 --- !u!4 &1587352369
 Transform:
   m_ObjectHideFlags: 0
@@ -464,6 +465,35 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1587352370
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1587352365}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 53841a8ec9aa5475290f97380af9e082, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  terrainMaterial: {fileID: 2100000, guid: cac78caaf365edc428d13d3b1e88c092, type: 2}
+  terrainCulling: {fileID: 7200000, guid: b39989d6a89e331409f427fbe1843c39, type: 3}
+  quadsInterleaving: 0.05
+--- !u!114 &1587352371
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1587352365}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ffac9c22e2eea655cb6e91291cc6e080, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  maxHorizontalSize: 64
+  mergeNormalsThreshold: 256
 --- !u!1 &1811439572
 GameObject:
   m_ObjectHideFlags: 0

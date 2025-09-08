@@ -1,7 +1,6 @@
 using UnityEngine;
 
-public class CameraFly : MonoBehaviour
-{
+public class CameraFly : MonoBehaviour {
     private const float xSensitivity = 0.025f;
     private const float ySensitivity = 0.025f;
     private const float speed = 200;
@@ -10,14 +9,12 @@ public class CameraFly : MonoBehaviour
     private float yRotation;
 
 
-    private void Start()
-    {
+    private void Start() {
         Cursor.lockState = CursorLockMode.Locked;
     }
 
 
-    private void Update()
-    {
+    private void Update() {
         // Translation
         float xMove = 0;
         float zMove = 0;
