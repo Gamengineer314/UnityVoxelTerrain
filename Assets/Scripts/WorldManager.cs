@@ -26,6 +26,5 @@ public class WorldManager : MonoBehaviour {
         watch.Restart();
         terrain.SetTerrain(voxels, new Bounds(new Vector3(horizontalSize, verticalSize, horizontalSize) / 2, new Vector3(horizontalSize, verticalSize, horizontalSize)));
         Debug.Log($"Mesh generated in {watch.ElapsedMilliseconds} ms");
-        voxels.Dispose();
     }
 }

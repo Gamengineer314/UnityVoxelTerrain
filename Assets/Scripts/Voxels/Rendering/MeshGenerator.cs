@@ -3,6 +3,7 @@ using Unity.Mathematics;
 using Unity.Burst;
 using Unity.Jobs;
 using Voxels.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 
 namespace Voxels.Rendering {
 
@@ -17,10 +18,9 @@ namespace Voxels.Rendering {
         private readonly int mergeNormalsThreshold;
         private readonly int jobHorizontalSize;
         private readonly bool seenFromAbove;
-        
-        public NativeList<VoxelMesh> meshes;
-        public NativeList<VoxelFace> faces;
-        protected int offset; // Face indices offset
+
+        protected Native2DArray<GeneratorJob> jobs;
+        protected Native2DArray<JobHandle> handles;
 
         /// <summary>
         /// Create a mesh generator
@@ -56,28 +56,16 @@ namespace Voxels.Rendering {
             this.mergeNormalsThreshold = mergeNormalsThreshold;
             this.jobHorizontalSize = jobHorizontalSize;
             this.seenFromAbove = seenFromAbove;
-            meshes = new(Allocator.Persistent);
-            faces = new(Allocator.Persistent);
-            offset = 0;
         }
 
-        public virtual void Dispose() {
-            meshes.Dispose();
-            faces.Dispose();
-        }
+        public virtual void Dispose() => DisposeJobs();
 
-
-        /// <summary>
-        /// Clear generated meshes and faces to free memory
-        /// <param name="keepOffset">Whether to keep the next face index as an offset for future meshes or reset it to 0</param>
-        /// </summary>
-        public virtual void Clear(bool keepOffset = false) {
-            if (keepOffset) offset += faces.Length;
-            else offset = 0;
-            meshes.Clear();
-            meshes.Capacity = 1;
-            faces.Clear();
-            faces.Capacity = 1;
+        private void DisposeJobs() {
+            if (jobs.IsCreated) {
+                foreach (GeneratorJob job in jobs) job.Dispose();
+                jobs.Dispose();
+                handles.Dispose();
+            }
         }
 
 
@@ -85,13 +73,14 @@ namespace Voxels.Rendering {
         /// Generate meshes from a voxel collection
         /// </summary>
         /// <param name="voxels">The voxels</param>
-        public void Generate(VoxelColumns<T> voxels) {
-            Native2DArray<MeshGeneratorJob> jobs = new(
+        public virtual void Generate(VoxelColumns<T> voxels) {
+            DisposeJobs();
+            jobs = new(
                 (int)math.ceil((float)voxels.sizeX / jobHorizontalSize),
                 (int)math.ceil((float)voxels.sizeZ / jobHorizontalSize),
-                Allocator.Temp, NativeArrayOptions.UninitializedMemory
+                Allocator.Persistent, NativeArrayOptions.UninitializedMemory
             );
-            Native2DArray<JobHandle> handles = new(jobs.sizeX, jobs.sizeY, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
+            handles = new(jobs.sizeX, jobs.sizeY, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
 
             // Create jobs
             for (int jobZ = 0; jobZ < jobs.sizeY; jobZ++) {
@@ -106,24 +95,12 @@ namespace Voxels.Rendering {
                     handles[jobX, jobZ] = jobs[jobX, jobZ].Schedule();
                 }
             }
-
-            // Run jobs and process results
-            JobHandle.CompleteAll(handles.Array);
-            ProcessResults(voxels, jobs);
-            foreach (MeshGeneratorJob job in jobs.Array) job.Dispose();
         }
-
-
-        /// <summary>
-        /// Add results of a mesh generation to the generated arrays
-        /// </summary>
-        /// <param name="jobs">Completed generator jobs</param>
-        protected abstract void ProcessResults(VoxelColumns<T> voxels, Native2DArray<MeshGeneratorJob> jobs);
 
 
 
         [BurstCompile]
-        protected unsafe struct MeshGeneratorJob : IJob {
+        protected unsafe struct GeneratorJob : IJob {
             private const int chunkSize = 64;
 
             [ReadOnly] private readonly VoxelColumns<T> voxels; // All voxels
@@ -134,9 +111,9 @@ namespace Voxels.Rendering {
             private readonly int mergeNormalsThreshold;
             private readonly bool seenFromAbove;
 
-            public NativeList<MeshFace> faces; // Faces
-            public NativeList<LinkedMeshPart> meshes; // Linked meshes
-            public NativeList<LinkedMeshHead> heads; // Linked mesh heads
+            [NativeDisableContainerSafetyRestriction] public NativeList<MeshFace> faces; // Faces
+            [NativeDisableContainerSafetyRestriction] public NativeList<LinkedMeshPart> meshes; // Linked meshes
+            [NativeDisableContainerSafetyRestriction] public NativeList<LinkedMeshHead> heads; // Linked mesh heads
 
             private int3 currentChunkStart;
             private int3 currentChunkSize;
@@ -148,7 +125,7 @@ namespace Voxels.Rendering {
             private int idCount;
             private fixed int currentHeads[6];
 
-            public MeshGeneratorJob(
+            public GeneratorJob(
                 VoxelColumns<T> voxels,
                 int startX, int startZ, int sizeX, int sizeZ,
                 TMerger merger,
@@ -165,9 +142,9 @@ namespace Voxels.Rendering {
                 this.maxHorizontalSize = maxHorizontalSize;
                 this.mergeNormalsThreshold = mergeNormalsThreshold;
                 this.seenFromAbove = seenFromAbove;
-                faces = new(Allocator.TempJob);
-                meshes = new(Allocator.TempJob);
-                heads = new(Allocator.TempJob);
+                faces = new(Allocator.Persistent);
+                meshes = new(Allocator.Persistent);
+                heads = new(Allocator.Persistent);
 
                 currentChunkStart = default;
                 currentChunkSize = default;
@@ -578,45 +555,81 @@ namespace Voxels.Rendering {
 
 
 
-    [BurstCompile]
     internal class TerrainMeshGenerator : MeshGenerator<char, IdentityMerger> {
+        public NativeList<VoxelTerrainFace> faces;
+        public NativeList<VoxelMesh> meshes;
+        public JobHandle handle;
+
         public TerrainMeshGenerator(
             int maxHorizontalSize = 64,
             int mergeNormalsThreshold = 256,
             int jobHorizontalSize = int.MaxValue
-        ) : base(default, maxHorizontalSize, mergeNormalsThreshold, jobHorizontalSize, true) { }
-
-        protected override void ProcessResults(VoxelColumns<char> voxels, Native2DArray<MeshGeneratorJob> jobs) {
-            ProcessResults(in voxels, in jobs, ref faces, ref meshes, offset);
+        ) : base(default, maxHorizontalSize, mergeNormalsThreshold, jobHorizontalSize, true) {
+            faces = new(Allocator.Persistent);
+            meshes = new(Allocator.Persistent);
         }
 
+        public override void Dispose() {
+            base.Dispose();
+            faces.Dispose();
+            meshes.Dispose();
+        }
+
+        public void Clear() {
+            faces.Clear();
+            faces.Length = 0;
+            meshes.Clear();
+            meshes.Length = 0;
+        }
+
+
+        public override unsafe void Generate(VoxelColumns<char> voxels) {
+            base.Generate(voxels);
+            ProcessJob job = new(voxels, new(jobs.Array), faces, meshes);
+            handle = job.Schedule(JobHandle.CombineDependencies(handles.Array));
+        }
+
+
         [BurstCompile]
-        private static void ProcessResults(
-            in VoxelColumns<char> voxels,
-            in Native2DArray<MeshGeneratorJob> jobs,
-            ref NativeList<VoxelFace> faces,
-            ref NativeList<VoxelMesh> meshes,
-            int offset
-        ) {
-            foreach (MeshGeneratorJob job in jobs.Array) {
-                foreach (LinkedMeshHead head in job.heads) {
-                    int startFace = faces.Length + offset;
-                    VoxelNormal normal = VoxelNormal.None;
-                    int i = head.head;
-                    while (i != -1) {
-                        LinkedMeshPart part = job.meshes[i];
-                        for (int j = part.startFace; j < part.endFace; j++) {
-                            MeshFace face = job.faces[j];
-                            int3 pos = face.pos;
-                            if (VoxelNormals.Positive(face.Normal)) pos[VoxelNormals.Axis(face.Normal)]++;
-                            faces.Add(new((uint3)pos, face.Width, face.Height, face.Normal, voxels.GetVoxel(face.pos)));
-                            if (normal == VoxelNormal.None) normal = face.Normal;
-                            else if (normal != face.Normal) normal = VoxelNormal.Any;
+        private unsafe struct ProcessJob : IJob {
+            [ReadOnly] private readonly VoxelColumns<char> voxels;
+            [ReadOnly] private readonly UnsafeArray<GeneratorJob> jobs;
+            public NativeList<VoxelTerrainFace> faces;
+            public NativeList<VoxelMesh> meshes;
+
+            public ProcessJob(
+                VoxelColumns<char> voxels,
+                UnsafeArray<GeneratorJob> jobs,
+                NativeList<VoxelTerrainFace> faces,
+                NativeList<VoxelMesh> meshes
+            ) {
+                this.voxels = voxels;
+                this.jobs = jobs;
+                this.faces = faces;
+                this.meshes = meshes;
+            }
+
+            public void Execute() {
+                foreach (GeneratorJob job in jobs) {
+                    foreach (LinkedMeshHead head in job.heads) {
+                        int startFace = faces.Length;
+                        VoxelNormal normal = VoxelNormal.None;
+                        int i = head.head;
+                        while (i != -1) {
+                            LinkedMeshPart part = job.meshes[i];
+                            for (int j = part.startFace; j < part.endFace; j++) {
+                                MeshFace face = job.faces[j];
+                                int3 pos = face.pos;
+                                if (VoxelNormals.Positive(face.Normal)) pos[VoxelNormals.Axis(face.Normal)]++;
+                                faces.Add(new((uint3)pos, face.Width, face.Height, face.Normal, voxels.GetVoxel(face.pos)));
+                                if (normal == VoxelNormal.None) normal = face.Normal;
+                                else if (normal != face.Normal) normal = VoxelNormal.Any;
+                            }
+                            i = part.next;
                         }
-                        i = part.next;
+                        float3 min = head.min, max = head.max;
+                        meshes.Add(new((min + max) / 2, (max - min) / 2, normal, (uint)(faces.Length - startFace), (uint)startFace));
                     }
-                    float3 min = head.min, max = head.max;
-                    meshes.Add(new((min + max) / 2, (max - min) / 2, normal, (uint)(faces.Length - startFace), (uint)startFace));
                 }
             }
         }

@@ -3,20 +3,20 @@ using Unity.Mathematics;
 namespace Voxels.Rendering {
 
     /// <summary>
-    /// Face of a voxel (packed to be usable in GPU buffers)
+    /// Face of a voxel in a terrain (packed to be usable in GPU buffers)
     /// </summary>
-    internal readonly struct VoxelFace {
-        public readonly uint data1; // x (13b), z (13b)
+    internal readonly struct VoxelTerrainFace {
+        public readonly uint data1; // x (16b), z (16b)
         public readonly uint data2; // y (9b), width (6b), height (6b), normal (3b), color (8b)
 
-        public VoxelFace(uint3 pos, uint width, uint height, VoxelNormal normal, uint color) {
-            data1 = pos.x | (pos.z << 13);
+        public VoxelTerrainFace(uint3 pos, uint width, uint height, VoxelNormal normal, uint color) {
+            data1 = pos.x | (pos.z << 16);
             data2 = pos.y | ((width - 1) << 9) | ((height - 1) << 15) | ((uint)normal << 21) | (color << 24);
         }
 
-        public uint X => data1 & 0b1111111111111;
+        public uint X => data1 & 0b1111111111111111;
         public uint Y => data2 & 0b111111111;
-        public uint Z => (data1 >> 13) & 0b1111111111111;
+        public uint Z => data1 >> 16;
         public uint Width => ((data2 >> 9) & 0b111111) + 1;
         public uint Height => ((data2 >> 15) & 0b111111) + 1;
         public VoxelNormal Normal => (VoxelNormal)((data2 >> 21) & 0b111);

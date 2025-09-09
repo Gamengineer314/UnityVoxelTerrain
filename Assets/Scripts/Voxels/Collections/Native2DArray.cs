@@ -1,4 +1,6 @@
 using System;
+using System.Collections;
+using System.Collections.Generic;
 using Unity.Collections;
 using Unity.Mathematics;
 
@@ -8,7 +10,7 @@ namespace Voxels.Collections {
     /// 2D array stored in a 1D NativeArray
     /// </summary>
     /// <typeparam name="T">Type of the elements in the array</typeparam>
-    public struct Native2DArray<T> where T : struct {
+    public struct Native2DArray<T> : IEnumerable<T>, IDisposable where T : struct {
         private NativeArray<T> array;
         public readonly int sizeX, sizeY; // Size in the x and y dimensions
 
@@ -43,6 +45,10 @@ namespace Voxels.Collections {
         }
 
         public readonly NativeArray<T> Array => array;
+        public readonly bool IsCreated => array.IsCreated;
+        public NativeArray<T>.Enumerator GetEnumerator() => array.GetEnumerator();
+        IEnumerator<T> IEnumerable<T>.GetEnumerator() => GetEnumerator();
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
 }

@@ -1,6 +1,4 @@
-using System;
 using UnityEngine;
-using Voxels;
 
 namespace Voxels.Rendering {
 
@@ -23,7 +21,7 @@ namespace Voxels.Rendering {
             rendering = true;
             MaterialPropertyBlock properties = new();
             renderParams = new(VoxelsData.Instance.terrainMaterial) {
-                //camera = target,
+                camera = target,
                 worldBounds = terrain.bounds,
                 matProps = properties
             };

@@ -22,7 +22,7 @@ Shader "Unlit/VoxelShader" {
             #define mask4Bits 15u            // 0b1111
             #define mask6Bits 63u            // 0b111111
             #define mask9Bits 511u           // 0b1111111111
-            #define mask13Bits 8191u         // 0b1111111111111
+            #define mask16Bits 65535u         // 0b1111111111111111
 
             static const uint faceLightLevels[] = {
                 12, // x+
@@ -34,7 +34,7 @@ Shader "Unlit/VoxelShader" {
             };
 
             struct Face {
-                uint data1; // x (13b), z (13b)
+                uint data1; // x (16b), z (16b)
                 uint data2; // y (9b), width (6b), height (6b), normal (3b), color (8b)
             };
 
@@ -60,7 +60,7 @@ Shader "Unlit/VoxelShader" {
                 vertexID &= mask2Bits;
 
                 // Unpack data
-                float3 cubePos = float3(faceData1 & mask13Bits, faceData2 & mask9Bits, faceData1 >> 13);
+                float3 cubePos = float3(faceData1 & mask16Bits, faceData2 & mask9Bits, faceData1 >> 16);
                 uint normalID = (faceData2 >> 21) & mask3Bits;
                 float width = ((faceData2 >> 9) & mask6Bits) + 1;
                 float height = ((faceData2 >> 15) & mask6Bits) + 1;
