@@ -3,34 +3,59 @@ using UnityEngine;
 namespace Voxels.Rendering {
 
     public class VoxelTerrainRenderer : MonoBehaviour {
-
         public VoxelTerrain terrain; // Terrain to render
         public Camera target; // Camera to render the terrain on
 
         private RenderParams renderParams;
+        private GraphicsBuffer commandsBuffer;
         private bool rendering;
 
 
         private void LateUpdate() {
             if (!rendering && terrain.Created) StartRender();
-            if (rendering) Render();
+            if (rendering) {
+                int count = PrepareDraw(terrain, target, commandsBuffer);
+                Graphics.RenderPrimitivesIndexedIndirect(renderParams, MeshTopology.Triangles, VoxelData.Instance.indicesBuffer, commandsBuffer, count);
+            }
         }
 
 
         private void StartRender() {
             rendering = true;
             MaterialPropertyBlock properties = new();
-            renderParams = new(VoxelsData.Instance.terrainMaterial) {
+            renderParams = new(VoxelData.Instance.terrainMaterial) {
                 camera = target,
                 worldBounds = terrain.bounds,
                 matProps = properties
             };
             properties.SetBuffer("faces", terrain.facesBuffer);
+            commandsBuffer = CreateCommands(terrain.meshCount);
         }
 
 
-        private void Render() {
-            VoxelsData voxels = VoxelsData.Instance;
+        /// <summary>
+        /// Create a commands buffer
+        /// </summary>
+        /// <param name="meshCount">Maximum number of meshes that can be rendered</param>
+        /// <returns>The buffer</returns>
+        internal static GraphicsBuffer CreateCommands(int meshCount) {
+            GraphicsBuffer buffer = new(GraphicsBuffer.Target.IndirectArguments | GraphicsBuffer.Target.Counter | GraphicsBuffer.Target.Structured, meshCount, GraphicsBuffer.IndirectDrawIndexedArgs.size);
+            GraphicsBuffer.IndirectDrawIndexedArgs[] commands = new GraphicsBuffer.IndirectDrawIndexedArgs[meshCount];
+            for (int i = 0; i < meshCount; i++) commands[i] = new() { instanceCount = 1 };
+            buffer.SetData(commands);
+            return buffer;
+        }
+
+
+        /// <summary>
+        /// Prepare a draw call
+        /// </summary>
+        /// <param name="terrain">The terrain to draw</param>
+        /// <param name="target">The target camera</param>
+        /// <param name="commandsBuffer">The commands buffer to use</param>
+        /// <returns>Number of commands to draw</returns>
+        internal static int PrepareDraw(VoxelTerrain terrain, Camera target, GraphicsBuffer commandsBuffer) {
+            VoxelData voxels = VoxelData.Instance;
 
             // Set camera data
             voxels.terrainCulling.SetVector(voxels.cameraPositionId, target.transform.position);
@@ -43,15 +68,18 @@ namespace Voxels.Rendering {
 
             // Frustrum culling
             voxels.terrainCulling.SetBuffer(0, voxels.meshesId, terrain.meshesBuffer);
-            voxels.terrainCulling.SetBuffer(0, voxels.commandsId, terrain.commandsBuffer);
-            terrain.commandsBuffer.SetCounterValue(0);
-            voxels.terrainCulling.Dispatch(0, terrain.threadGroups, 1, 1);
-            GraphicsBuffer.CopyCount(terrain.commandsBuffer, voxels.counterBuffer, 0);
+            voxels.terrainCulling.SetBuffer(0, voxels.commandsId, commandsBuffer);
+            commandsBuffer.SetCounterValue(0);
+            voxels.terrainCulling.Dispatch(0, terrain.meshCount / VoxelData.terrainCullingGroupSize, 1, 1);
+            GraphicsBuffer.CopyCount(commandsBuffer, voxels.counterBuffer, 0);
             uint[] data = new uint[1];
             voxels.counterBuffer.GetData(data);
+            return (int)data[0];
+        }
 
-            // Draw calls
-            Graphics.RenderPrimitivesIndexedIndirect(renderParams, MeshTopology.Triangles, voxels.indicesBuffer, terrain.commandsBuffer, commandCount: (int)data[0]);
+
+        private void OnDestroy() {
+            commandsBuffer?.Dispose();
         }
     }
 

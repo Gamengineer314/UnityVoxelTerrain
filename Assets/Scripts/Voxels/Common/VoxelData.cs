@@ -1,15 +1,17 @@
+using System;
 using UnityEngine;
+using Random = UnityEngine.Random;
 
 namespace Voxels {
 
     /// <summary>
     /// Voxels global data
     /// </summary>
-    public class VoxelsData : MonoBehaviour {
+    public class VoxelData : MonoBehaviour {
         internal const int terrainCullingGroupSize = 64;
         internal const int maxFaceCount = 16384;
 
-        internal static VoxelsData Instance { get; private set; }
+        internal static VoxelData Instance { get; private set; }
 
         [SerializeField] internal Material terrainMaterial;
         [SerializeField] internal ComputeShader terrainCulling;
@@ -23,6 +25,7 @@ namespace Voxels {
             }
         }
 
+        // Global buffers
         internal GraphicsBuffer indicesBuffer { get; private set; } // All 16 bits indices
         internal GraphicsBuffer counterBuffer { get; private set; } // Buffer to store a counter
 
@@ -36,8 +39,19 @@ namespace Voxels {
         internal readonly int meshesId = Shader.PropertyToID("meshes");
         internal readonly int commandsId = Shader.PropertyToID("commands");
 
-
         private void Awake() {
+            if (Instance == null) Init();
+        }
+
+        private void OnDestroy() {
+            if (Instance == this) Dispose();
+        }
+
+
+        /// <summary>
+        /// Initialize global data
+        /// </summary>
+        internal void Init() {
             Instance = this;
 
             ushort[] indices = new ushort[98304];
@@ -57,7 +71,11 @@ namespace Voxels {
             terrainMaterial.SetFloat("seed", Random.value);
         }
 
-        private void OnDestroy() {
+
+        /// <summary>
+        /// Dispose global data
+        /// </summary>
+        internal void Dispose() {
             indicesBuffer.Dispose();
             counterBuffer.Dispose();
         }

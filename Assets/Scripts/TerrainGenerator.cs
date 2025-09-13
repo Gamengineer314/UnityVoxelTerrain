@@ -14,7 +14,7 @@ public class TerrainGenerator : MonoBehaviour {
     public VoxelColumns<char> GenerateTerrain() {
         Native2DArray<Voxel<char>> heightMap = new(WorldManager.horizontalSize, WorldManager.horizontalSize, Allocator.Persistent);
         GenerateHeightMap(ref heightMap);
-        VoxelColumns<char> voxels = VoxelColumns.FromHeightMap(heightMap);
+        VoxelColumns<char> voxels = VoxelColumns<char>.FromHeightMap(heightMap);
         heightMap.Dispose();
         return voxels;
     }

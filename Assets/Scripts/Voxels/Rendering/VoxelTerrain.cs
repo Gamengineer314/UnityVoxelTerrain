@@ -1,76 +1,73 @@
 using System;
-using Unity.Jobs;
+using Unity.Collections;
 using UnityEngine;
 using Voxels.Collections;
 
 namespace Voxels.Rendering {
-
+    
     public class VoxelTerrain : MonoBehaviour {
+        [SerializeField] private TextAsset voxelsAsset;
         public int maxHorizontalSize = 64;
         public int mergeNormalsThreshold = 256;
 
-        public Bounds bounds { get; private set; }
+        [NonSerialized] public Bounds bounds;
+        [NonSerialized] public VoxelColumns<char> voxels;
+
         internal GraphicsBuffer facesBuffer { get; private set; }
         internal GraphicsBuffer meshesBuffer { get; private set; }
-        internal GraphicsBuffer commandsBuffer { get; private set; }
-        internal int threadGroups { get; private set; }
-        internal VoxelColumns<char> voxels { get; private set; }
+        internal int meshCount { get; private set; }
 
         private TerrainMeshGenerator generator;
         private bool generating;
         internal bool Created => facesBuffer != null;
 
-        private void Awake() {
+
+        private unsafe void Awake() {
             generator = new(maxHorizontalSize, mergeNormalsThreshold, 1024);
-        }
-
-
-        /// <summary>
-        /// Set the terrain
-        /// </summary>
-        /// <param name="voxels">Voxels in the terrain</param>
-        /// <param name="bounds">Bounds of the terrain</param>
-        /// <param name="background">Whether to run the mesh generation in the background</param>
-        public void SetTerrain(VoxelColumns<char> voxels, Bounds bounds, bool background = false) {
-            if (Created || generating) throw new Exception("Terrains can only be set once");
-            this.voxels = voxels;
-            this.bounds = bounds;
-            generator.Generate(voxels);
-            if (background) generating = true;
-            else {
-                generator.handle.Complete();
-                FinishSetTerrain();
-            }
-        }
-
-        private unsafe void FinishSetTerrain() {
-            while (generator.meshes.Length % VoxelsData.terrainCullingGroupSize != 0) generator.meshes.Add(default);
-            threadGroups = generator.meshes.Length / VoxelsData.terrainCullingGroupSize;
-            facesBuffer = new(GraphicsBuffer.Target.Structured, generator.faces.Length, sizeof(VoxelTerrainFace));
-            facesBuffer.SetData(generator.faces.AsArray());
-            meshesBuffer = new(GraphicsBuffer.Target.Structured, generator.meshes.Length, sizeof(VoxelMesh));
-            meshesBuffer.SetData(generator.meshes.AsArray());
-            commandsBuffer = new(GraphicsBuffer.Target.IndirectArguments | GraphicsBuffer.Target.Counter | GraphicsBuffer.Target.Structured, generator.meshes.Length, GraphicsBuffer.IndirectDrawIndexedArgs.size);
-            GraphicsBuffer.IndirectDrawIndexedArgs[] commands = new GraphicsBuffer.IndirectDrawIndexedArgs[generator.meshes.Length];
-            for (int i = 0; i < generator.meshes.Length; i++) commands[i] = new() { instanceCount = 1 };
-            commandsBuffer.SetData(commands);
-            generator.Dispose();
+            if (voxelsAsset != null) VoxelUtils.AsVoxels(voxelsAsset, out bounds, out voxels);
         }
 
         private void OnDestroy() {
             if (Created) {
                 facesBuffer.Dispose();
                 meshesBuffer.Dispose();
-                commandsBuffer.Dispose();
-                voxels.Dispose();
             }
+            else generator.Dispose();
+            if (voxels.Created) voxels.Dispose();
+        }
+
+
+        /// <summary>
+        /// Complete terrain generation now
+        /// </summary>
+        public void CompleteGenerate() {
+            if (Created) throw new InvalidOperationException("Can't call CompleteGenerate : terrain already generated");
+            if (!voxels.Created) throw new InvalidOperationException("Can't call CompleteGenerate : voxels not set");
+            if (!generating) generator.Generate(voxels);
+            generator.handle.Complete();
+            FinishGenerate();
+            generating = false;
+        }
+
+        private unsafe void FinishGenerate() {
+            while (generator.meshes.Length % VoxelData.terrainCullingGroupSize != 0) generator.meshes.Add(default);
+            meshCount = generator.meshes.Length;
+            facesBuffer = new(GraphicsBuffer.Target.Structured, generator.faces.Length, sizeof(VoxelTerrainFace));
+            facesBuffer.SetData(generator.faces.AsArray());
+            meshesBuffer = new(GraphicsBuffer.Target.Structured, generator.meshes.Length, sizeof(VoxelMesh));
+            meshesBuffer.SetData(generator.meshes.AsArray());
+            generator.Dispose();
         }
 
         private void Update() {
+            if (voxels.Created && !generating && !Created) {
+                generator.Generate(voxels);
+                generating = true;
+            }
             if (generating && generator.handle.IsCompleted) {
                 generating = false;
                 generator.handle.Complete();
-                FinishSetTerrain();
+                FinishGenerate();
             }
         }
     }

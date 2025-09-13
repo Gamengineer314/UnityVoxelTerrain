@@ -1,3 +1,5 @@
+using System;
+using System.IO;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Mathematics;
@@ -12,8 +14,8 @@ namespace Voxels.Collections {
     [BurstCompile]
     public readonly struct VoxelColumns<T> where T : unmanaged {
         public readonly int sizeX, sizeZ; // Size in the x and z dimensions
-        private readonly NativeArray<Voxel<T>> voxels; // All columns
-        private readonly NativeArray<int> startIndices; // [sizeX * sizeZ + 1] sized array giving the start index of each column
+        internal readonly NativeArray<Voxel<T>> voxels; // All columns
+        internal readonly NativeArray<int> startIndices; // [sizeX * sizeZ + 1] sized array giving the start index of each column
 
         public VoxelColumns(int sizeX, int sizeZ, NativeArray<Voxel<T>> voxels, NativeArray<int> startIndices) {
             this.sizeX = sizeX;
@@ -26,6 +28,8 @@ namespace Voxels.Collections {
             voxels.Dispose();
             startIndices.Dispose();
         }
+
+        public bool Created => voxels.IsCreated;
 
 
         /// <summary>
@@ -86,24 +90,20 @@ namespace Voxels.Collections {
         }
 
         public int GetMax(int2 coords) => GetMax(coords.x, coords.y);
-    }
 
 
-
-    [BurstCompile]
-    public static class VoxelColumns {
         /// <summary>
         /// Create an array of voxels from a height map
         /// </summary>
         /// <param name="voxels">Highest voxel in each column</param>
         /// <returns>The voxels</returns>
-        public static VoxelColumns<T> FromHeightMap<T>(Native2DArray<Voxel<T>> voxels) where T : unmanaged {
+        public static VoxelColumns<T> FromHeightMap(Native2DArray<Voxel<T>> voxels) {
             FromHeightMap(in voxels, out VoxelColumns<T> result);
             return result;
         }
 
         [BurstCompile]
-        private static void FromHeightMap<T>(in Native2DArray<Voxel<T>> voxels, out VoxelColumns<T> result) where T : unmanaged {
+        private static void FromHeightMap(in Native2DArray<Voxel<T>> voxels, out VoxelColumns<T> result) {
             NativeList<Voxel<T>> allVoxels = new(Allocator.Persistent);
             NativeArray<int> startIndices = new(voxels.sizeX * voxels.sizeY + 1, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
 

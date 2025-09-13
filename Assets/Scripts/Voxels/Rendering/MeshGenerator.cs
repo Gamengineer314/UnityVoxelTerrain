@@ -50,7 +50,7 @@ namespace Voxels.Rendering {
             int jobHorizontalSize = int.MaxValue,
             bool seenFromAbove = false
         ) {
-            if (mergeNormalsThreshold > VoxelsData.maxFaceCount) mergeNormalsThreshold = VoxelsData.maxFaceCount;
+            if (mergeNormalsThreshold > VoxelData.maxFaceCount) mergeNormalsThreshold = VoxelData.maxFaceCount;
             this.merger = merger;
             this.maxHorizontalSize = maxHorizontalSize;
             this.mergeNormalsThreshold = mergeNormalsThreshold;
@@ -433,12 +433,12 @@ namespace Voxels.Rendering {
                     int3 prevMin = heads[headIndex].min, prevMax = heads[headIndex].max;
                     int3 newMin = math.select(prevMin, min, min < prevMin), newMax = math.select(prevMax, max, max > prevMax);
                     int faceCount = heads[headIndex].faceCount + faces.Length - startFace;
-                    if (faceCount > VoxelsData.maxFaceCount) { // Split mesh
-                        meshes.Add(new(startFace, faces.Length - (faceCount - VoxelsData.maxFaceCount), heads[headIndex].head));
-                        heads[headIndex] = new(meshes.Length - 1, VoxelsData.maxFaceCount, newMin, newMax);
-                        meshes.Add(new(faces.Length - (faceCount - VoxelsData.maxFaceCount), faces.Length, -1));
+                    if (faceCount > VoxelData.maxFaceCount) { // Split mesh
+                        meshes.Add(new(startFace, faces.Length - (faceCount - VoxelData.maxFaceCount), heads[headIndex].head));
+                        heads[headIndex] = new(meshes.Length - 1, VoxelData.maxFaceCount, newMin, newMax);
+                        meshes.Add(new(faces.Length - (faceCount - VoxelData.maxFaceCount), faces.Length, -1));
                         currentHeads[(int)normal] = heads.Length;
-                        heads.Add(new(meshes.Length - 1, faceCount - VoxelsData.maxFaceCount, newMin, newMax));
+                        heads.Add(new(meshes.Length - 1, faceCount - VoxelData.maxFaceCount, newMin, newMax));
                     }
                     else {
                         meshes.Add(new(startFace, faces.Length, heads[headIndex].head));

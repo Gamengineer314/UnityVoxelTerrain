@@ -1,9 +1,8 @@
 using UnityEngine;
-using Unity.Collections;
-using Unity.Jobs;
 using Stopwatch = System.Diagnostics.Stopwatch;
 using Voxels.Collections;
 using Voxels.Rendering;
+using Voxels;
 
 public class WorldManager : MonoBehaviour {
     public const int horizontalSize = 4096; // Number of blocks in x and z dimensions
@@ -24,7 +23,9 @@ public class WorldManager : MonoBehaviour {
 
         // Generate mesh
         watch.Restart();
-        terrain.SetTerrain(voxels, new Bounds(new Vector3(horizontalSize, verticalSize, horizontalSize) / 2, new Vector3(horizontalSize, verticalSize, horizontalSize)));
+        terrain.voxels = voxels;
+        terrain.bounds = new Bounds(new Vector3(horizontalSize, verticalSize, horizontalSize) / 2, new Vector3(horizontalSize, verticalSize, horizontalSize));
+        terrain.CompleteGenerate();
         Debug.Log($"Mesh generated in {watch.ElapsedMilliseconds} ms");
     }
 }
