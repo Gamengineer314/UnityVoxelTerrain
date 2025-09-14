@@ -40,7 +40,8 @@ namespace Voxels.Editor {
 
 
         private static void RenderTerrains(Camera sceneCamera) {
-            RenderParams renderParams = new(VoxelData.Instance.terrainMaterial) { camera = sceneCamera };
+            VoxelData voxels = VoxelData.Instance;
+            RenderParams renderParams = new(voxels.terrainMaterial) { camera = sceneCamera };
 
             VoxelTerrain[] terrains = FindObjectsOfType<VoxelTerrain>();
             foreach (VoxelTerrain terrain in terrains) {
@@ -52,17 +53,16 @@ namespace Voxels.Editor {
                 if (renderMode == SceneRender.None) continue;
                 int count;
                 if (renderMode == SceneRender.All) {
-                    count = VoxelTerrainRenderer.PrepareDraw(terrain, sceneCamera, commandsBuffer);
+                    count = VoxelTerrainRenderer.PrepareDraw(terrain, sceneCamera, terrain.facesBuffer, commandsBuffer);
                 }
                 else {
                     int renderId = VoxelTerrainEditor.GetRenderId(terrain);
                     VoxelTerrainRenderer renderer = (VoxelTerrainRenderer)EditorUtility.InstanceIDToObject(renderId);
-                    count = VoxelTerrainRenderer.PrepareDraw(terrain, renderer.target, commandsBuffer);
+                    count = VoxelTerrainRenderer.PrepareDraw(terrain, renderer.target, terrain.facesBuffer, commandsBuffer);
                 }
 
                 renderParams.worldBounds = terrain.bounds;
-                VoxelData.Instance.terrainMaterial.SetBuffer("faces", terrain.facesBuffer);
-                Graphics.RenderPrimitivesIndexedIndirect(renderParams, MeshTopology.Triangles, VoxelData.Instance.indicesBuffer, commandsBuffer, count);
+                Graphics.RenderPrimitivesIndexedIndirect(renderParams, MeshTopology.Triangles, voxels.indicesBuffer, commandsBuffer, count);
             }
         }
     }

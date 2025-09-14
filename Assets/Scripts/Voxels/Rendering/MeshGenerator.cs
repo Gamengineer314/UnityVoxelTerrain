@@ -1,9 +1,11 @@
+using System;
+using UnityEngine;
 using Unity.Collections;
 using Unity.Mathematics;
 using Unity.Burst;
 using Unity.Jobs;
-using Voxels.Collections;
 using Unity.Collections.LowLevel.Unsafe;
+using Voxels.Collections;
 
 namespace Voxels.Rendering {
 
@@ -464,7 +466,7 @@ namespace Voxels.Rendering {
                         ulong deleteMask = ~checkMask;
 
                         int height = 1;
-                        while (y + height < currentChunkSize[VoxelNormals.Axis(normal)]) { // Expand in y
+                        while (y + height <= currentChunkSize[VoxelNormals.Axis(normal)]) { // Expand in y
                             ref ulong nextRow = ref planes[startIndex + y + height];
                             if ((nextRow & checkMask) != checkMask) break;
                             nextRow &= deleteMask;
@@ -479,7 +481,6 @@ namespace Voxels.Rendering {
                         faceMax[VoxelNormals.HeightAxis(normal)] += height;
                         min = math.select(min, faceMin, faceMin < min);
                         max = math.select(max, faceMax, faceMax > max);
-                        voxels.GetVoxel(faceMin);
                         faces.Add(new(pos, (uint)width, (uint)height, normal));
 
                         int prevX = x;
@@ -553,6 +554,10 @@ namespace Voxels.Rendering {
         public readonly char MergeIdentifier(char id) => id;
     }
 
+    internal struct AllMerger<T> : IMerger<T> {
+        public readonly char MergeIdentifier(T id) => (char)1;
+    }
+
 
 
     internal class TerrainMeshGenerator : MeshGenerator<char, IdentityMerger> {
@@ -584,6 +589,8 @@ namespace Voxels.Rendering {
 
 
         public override unsafe void Generate(VoxelColumns<char> voxels) {
+            if (voxels.sizeX > VoxelTerrainFace.maxCoord || voxels.sizeZ > VoxelTerrainFace.maxCoord)
+                throw new ArgumentException($"Size {voxels.sizeX}x{voxels.sizeZ} is too large for a terrain");
             base.Generate(voxels);
             ProcessJob job = new(voxels, new(jobs.Array), faces, meshes);
             handle = job.Schedule(JobHandle.CombineDependencies(handles.Array));
@@ -591,7 +598,7 @@ namespace Voxels.Rendering {
 
 
         [BurstCompile]
-        private unsafe struct ProcessJob : IJob {
+        private unsafe struct ProcessJob : IJob { // Process abstract generator results
             [ReadOnly] private readonly VoxelColumns<char> voxels;
             [ReadOnly] private readonly UnsafeArray<GeneratorJob> jobs;
             public NativeList<VoxelTerrainFace> faces;
@@ -617,7 +624,7 @@ namespace Voxels.Rendering {
                         int i = head.head;
                         while (i != -1) {
                             LinkedMeshPart part = job.meshes[i];
-                            for (int j = part.startFace; j < part.endFace; j++) {
+                            for (int j = part.startFace; j < part.endFace; j++) { // Add faces
                                 MeshFace face = job.faces[j];
                                 int3 pos = face.pos;
                                 if (VoxelNormals.Positive(face.Normal)) pos[VoxelNormals.Axis(face.Normal)]++;
@@ -629,6 +636,115 @@ namespace Voxels.Rendering {
                         }
                         float3 min = head.min, max = head.max;
                         meshes.Add(new((min + max) / 2, (max - min) / 2, normal, (uint)(faces.Length - startFace), (uint)startFace));
+                    }
+                }
+            }
+        }
+    }
+
+
+
+    internal class ObjectMeshGenerator : MeshGenerator<Color32, AllMerger<Color32>> {
+        public NativeList<VoxelObjectFace> faces;
+        public NativeList<VoxelMesh> meshes;
+        public NativeList<Color32> texture;
+        public JobHandle handle;
+        private int faceOffset = 0, textureOffset = 0;
+
+        public ObjectMeshGenerator(
+            int maxHorizontalSize = 64,
+            int mergeNormalsThreshold = 256,
+            int jobHorizontalSize = int.MaxValue
+        ) : base(default, maxHorizontalSize, mergeNormalsThreshold, jobHorizontalSize) {
+            faces = new(Allocator.Persistent);
+            meshes = new(Allocator.Persistent);
+            texture = new(Allocator.Persistent);
+        }
+
+        public override void Dispose() {
+            base.Dispose();
+            faces.Dispose();
+            meshes.Dispose();
+        }
+
+        public void Clear(bool keepOffsets = false) {
+            if (keepOffsets) {
+                faceOffset = faces.Length;
+                textureOffset = texture.Length;
+            }
+            faces.Clear();
+            faces.Length = 0;
+            meshes.Clear();
+            meshes.Length = 0;
+            texture.Clear();
+            texture.Length = 0;
+        }
+
+
+        public override unsafe void Generate(VoxelColumns<Color32> voxels) {
+            if (voxels.sizeX > VoxelObjectFace.maxCoord || voxels.sizeZ > VoxelObjectFace.maxCoord)
+                throw new ArgumentException($"Size {voxels.sizeX}x{voxels.sizeZ} is too large for a terrain");
+            base.Generate(voxels);
+            ProcessJob job = new(voxels, new(jobs.Array), faces, meshes, texture, faceOffset, textureOffset);
+            handle = job.Schedule(JobHandle.CombineDependencies(handles.Array));
+        }
+
+
+        [BurstCompile]
+        private unsafe struct ProcessJob : IJob { // Process abstract generator results
+            [ReadOnly] private readonly VoxelColumns<Color32> voxels;
+            [ReadOnly] private readonly UnsafeArray<GeneratorJob> jobs;
+            public NativeList<VoxelObjectFace> faces;
+            public NativeList<VoxelMesh> meshes;
+            public NativeList<Color32> texture;
+            public int faceOffset, textureOffset;
+
+            public ProcessJob(
+                VoxelColumns<Color32> voxels,
+                UnsafeArray<GeneratorJob> jobs,
+                NativeList<VoxelObjectFace> faces,
+                NativeList<VoxelMesh> meshes,
+                NativeList<Color32> texture,
+                int faceOffset, int textureOffset
+            ) {
+                this.voxels = voxels;
+                this.jobs = jobs;
+                this.faces = faces;
+                this.meshes = meshes;
+                this.texture = texture;
+                this.faceOffset = faceOffset;
+                this.textureOffset = textureOffset;
+            }
+
+            public void Execute() {
+                foreach (GeneratorJob job in jobs) {
+                    foreach (LinkedMeshHead head in job.heads) {
+                        int startFace = faces.Length;
+                        VoxelNormal normal = VoxelNormal.None;
+                        int i = head.head;
+                        while (i != -1) {
+                            LinkedMeshPart part = job.meshes[i];
+                            for (int j = part.startFace; j < part.endFace; j++) { // Add faces
+                                MeshFace face = job.faces[j];
+                                int3 pos = face.pos;
+                                if (VoxelNormals.Positive(face.Normal)) pos[VoxelNormals.Axis(face.Normal)]++;
+                                faces.Add(new((uint3)pos, face.Width, face.Height, face.Normal, (uint)(texture.Length + textureOffset)));
+                                if (normal == VoxelNormal.None) normal = face.Normal;
+                                else if (normal != face.Normal) normal = VoxelNormal.Any;
+                                pos = face.pos;
+                                for (int x = 0; x < face.Width; x++) { // Add texture
+                                    for (int y = 0; y < face.Height; y++) {
+                                        int3 texturePos = pos;
+                                        texturePos[VoxelNormals.WidthAxis(face.Normal)] += x;
+                                        texturePos[VoxelNormals.HeightAxis(face.Normal)] += y;
+                                        texture.Add(voxels.GetVoxel(texturePos));
+                                    }
+                                }
+                            }
+                            i = part.next;
+                        }
+                        float3 min = head.min, max = head.max;
+                        meshes.Add(new((min + max) / 2, (max - min) / 2, normal, (uint)(faces.Length - startFace), (uint)(startFace + faceOffset)));
                     }
                 }
             }

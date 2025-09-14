@@ -6,6 +6,9 @@ namespace Voxels.Rendering {
     /// Face of a voxel in a terrain (packed to be usable in GPU buffers)
     /// </summary>
     internal readonly struct VoxelTerrainFace {
+        public const int maxCoord = (1 << 16) - 1;
+        public const int maxSize = 1 << 6;
+
         public readonly uint data1; // x (16b), z (16b)
         public readonly uint data2; // y (9b), width (6b), height (6b), normal (3b), color (8b)
 
@@ -21,6 +24,31 @@ namespace Voxels.Rendering {
         public uint Height => ((data2 >> 15) & 0b111111) + 1;
         public VoxelNormal Normal => (VoxelNormal)((data2 >> 21) & 0b111);
         public uint Color => data2 >> 24;
+    }
+
+
+    /// <summary>
+    /// Face of a voxel in an object (packed to be usable in GPU buffers)
+    /// </summary>
+    internal readonly struct VoxelObjectFace {
+        public const int maxCoord = (1 << 9) - 1;
+        public const int maxSize = 1 << 6;
+
+        public readonly uint data1; // x (9b), y (9b), z (9b), normal (3b)
+        public readonly uint data2; // width (6b), height (6b), texture (20b)
+
+        public VoxelObjectFace(uint3 pos, uint width, uint height, VoxelNormal normal, uint texture) {
+            data1 = pos.x | (pos.y << 9) | (pos.z << 18) | ((uint)normal << 27);
+            data2 = (width - 1) | ((height - 1) << 6) | (texture << 12);
+        }
+
+        public uint X => data1 & 0b111111111;
+        public uint Y => (data1 >> 9) & 0b111111111;
+        public uint Z => (data1 >> 18) & 0b111111111;
+        public uint Width => (data2 & 0b111111) + 1;
+        public uint Height => ((data2 >> 6) & 0b111111) + 1;
+        public VoxelNormal Normal => (VoxelNormal)(data1 >> 27);
+        public uint Texture => data2 >> 12;
     }
 
 
@@ -73,7 +101,7 @@ namespace Voxels.Rendering {
 
         /// <summary>
         /// Whether a normal is positive or negative
-        /// <returns></returns>
+        /// </summary>
         public static bool Positive(VoxelNormal normal) => ((int)normal & 1) == 0;
 
         // x: 1, y: 0, z: 1
